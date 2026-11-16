@@ -669,7 +669,9 @@ function get_cookie_token() {
 \treturn m ? m[1] : null;
 }
 
-function is_authed() {
+function is_authed(c) {
+\tlet saved_hash = trim(c.get('quotamgr', 'main', 'admin_hash') || '');
+\tif (saved_hash == '') return true;
 \tlet tok = get_cookie_token();
 \tif (!tok) return false;
 \tlet s = readfile(SESS_DIR + tok);
@@ -760,14 +762,17 @@ let c = cursor();
 
 if (action == 'login') {
 \tlet body = read_body();
-\tlet saved_hash = c.get('quotamgr', 'main', 'admin_hash') || sha256('admin');
+\tlet saved_hash = trim(c.get('quotamgr', 'main', 'admin_hash') || '');
+\tif (saved_hash == '') {
+\t\trespond(200, { ok: true, auth_enabled: false });
+\t}
 \tif (sha256(body.password || '') != saved_hash) {
 \t\trespond(401, { ok: false, error: 'كلمة المرور غير صحيحة' });
 \t}
 \tfor (let f in (lsdir(SESS_DIR) || [])) unlink(SESS_DIR + f);
 \tlet tok = trim(capture('head -c 16 /dev/urandom | hexdump -ve "1/1 \\"%.2x\\""'));
 \twritefile(SESS_DIR + tok, '' + time());
-\trespond(200, { ok: true, default_pw: (saved_hash == sha256('admin')) }, [
+\trespond(200, { ok: true, auth_enabled: true }, [
 \t\t'Set-Cookie: qm_sess=' + tok + '; Path=/; HttpOnly; SameSite=Lax'
 \t]);
 }
@@ -778,7 +783,7 @@ if (action == 'logout') {
 \trespond(200, { ok: true }, ['Set-Cookie: qm_sess=; Path=/; Max-Age=0']);
 }
 
-if (!is_authed()) {
+if (!is_authed(c)) {
 \trespond(401, { ok: false, auth_required: true });
 }
 
@@ -791,6 +796,7 @@ if (action == 'state') {
 \tlet df_out = trim(capture("df -k /overlay | tail -n 1 | awk '{print $4}'"));
 \trespond(200, {
 \t\tok: true,
+\t\tauth_enabled: (trim(c.get('quotamgr', 'main', 'admin_hash') || '') != ''),
 \t\tsettings: {
 \t\t\tbundle_gb: +(c.get('quotamgr', 'main', 'bundle_gb') || 140),
 \t\t\trenew_day: +(c.get('quotamgr', 'main', 'renew_day') || 1),
@@ -890,7 +896,9 @@ if (action == 'update_settings') {
 \tif (body.dns_secondary != null) c.set('quotamgr', 'main', 'dns_secondary', '' + body.dns_secondary);
 \tif (body.force_dns != null) c.set('quotamgr', 'main', 'force_dns', body.force_dns ? '1' : '0');
 \tif (body.dns_cache != null) c.set('quotamgr', 'main', 'dns_cache', '' + (+body.dns_cache));
-\tif (body.new_password && length(body.new_password) >= 4) {
+\tif (body.clear_password) {
+\t\tc.set('quotamgr', 'main', 'admin_hash', '');
+\t} else if (body.new_password && length(body.new_password) >= 4) {
 \t\tc.set('quotamgr', 'main', 'admin_hash', sha256(body.new_password));
 \t}
 \tc.save('quotamgr');
@@ -950,8 +958,8 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
 </head>
 <body>
 <div id="login" class="hide">
-  <h2 style="margin-top:0">دخول مدير الشبكة</h2>
-  <p class="muted">راوتر OpenWrt — كلمة المرور الافتراضية: admin</p>
+  <h2 style="margin-top:0">دخول لوحة الشبكة</h2>
+  <p class="muted">راوتر OpenWrt 25.12.6 — أدخل كلمة المرور المخصّصة</p>
   <input id="pw" type="password" placeholder="كلمة المرور" style="width:100%;margin:12px 0">
   <button class="pri" style="width:100%" onclick="doLogin()">دخول</button>
   <p id="lerr" style="color:#ef4444;font-size:12px"></p>
@@ -968,7 +976,7 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
     </div>
     <div class="row">
       <button id="tbtn" onclick="toggleTheme()">الوضع الليلي</button>
-      <button onclick="logout()">خروج</button>
+      <button id="lout" class="hide" onclick="logout()">خروج</button>
     </div>
   </header>
   <div class="wrap">
@@ -1060,8 +1068,9 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
           <label><input id="sqos" type="checkbox"> تفعيل QoS وتخفيض Ping</label>
         </div>
         <div class="row" style="margin-top:12px">
-          <input id="spw" type="password" placeholder="تغيير كلمة المرور (اختياري)">
+          <input id="spw" type="password" placeholder="تعيين/تغيير كلمة المرور (اختياري)">
           <button class="pri" onclick="saveSettings()">حفظ الإعدادات</button>
+          <button id="clrp" class="hide" onclick="clearPw()">إلغاء كلمة المرور</button>
           <button class="dng" onclick="resetCycle()">تصفير استهلاك الدورة</button>
         </div>
       </div>
@@ -1089,6 +1098,8 @@ async function load(){
 }
 function render(){
   const st=DATA.state,cfg=DATA.settings,sys=DATA.system;
+  const lb=document.getElementById('lout');if(lb)lb.classList.toggle('hide',!DATA.auth_enabled);
+  const cp=document.getElementById('clrp');if(cp)cp.classList.toggle('hide',!DATA.auth_enabled);
   let totUsed=0;Object.values(st.devices).forEach(d=>totUsed+=d.used_bytes||0);
   const rem=Math.max(0,cfg.bundle_gb*GB-totUsed),pct=Math.min(100,(totUsed/(cfg.bundle_gb*GB||1))*100);
   document.getElementById('kpis').innerHTML=\`
@@ -1162,7 +1173,8 @@ async function addDom(){const v=document.getElementById('cdom').value.trim();if(
 async function delDom(v){const arr=(DATA.state.custom_domains||[]).filter(x=>x!==v);await api('update_settings',{custom_domains:arr});load();}
 async function addRec(){const h=document.getElementById('lhost').value.trim(),ip=document.getElementById('lip').value.trim();if(!h||!ip)return;const arr=(DATA.state.local_records||[]).concat([{host:h,ip:ip}]);document.getElementById('lhost').value='';await api('update_settings',{local_records:arr});load();}
 async function delRec(h){const arr=(DATA.state.local_records||[]).filter(x=>x.host!==h);await api('update_settings',{local_records:arr});load();}
-async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,new_password:document.getElementById('spw').value});load();}
+async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,new_password:document.getElementById('spw').value});document.getElementById('spw').value='';load();}
+async function clearPw(){await api('update_settings',{clear_password:true});load();}
 async function resetCycle(){if(confirm('تصفير استهلاك الدورة؟')){await api('reset_cycle',{});load();}}
 load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').classList.contains('hide')&&!EDIT_MAC)load();},6000);
 </script>
@@ -1170,24 +1182,24 @@ load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').cla
 </html>
 `;
 
-function computeSimpleSha256Hint(pw: string): string {
-  // In the OpenWrt installer script itself, sha256sum is computed natively at install time!
-  // We keep a safe placeholder marker replaced by printf|sha256sum inside install_openwrt.sh
-  return pw;
-}
-
 function compactBundleText(raw: string): string {
-  return raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join('\n') + '\n';
+  return (
+    raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n') + '\n'
+  );
 }
 
 export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtFile[] {
   const daemonCode = compactBundleText(QUOTAMGRD_UCODE);
   const cgiCode = compactBundleText(CGI_API_UCODE);
   const htmlCode = compactBundleText(ROUTER_HTML_UI);
+  const customPw = cfg.initialPassword.trim();
+  const adminHashExpr = customPw
+    ? `$(printf %s '${customPw.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)`
+    : '';
   const uciConfig = UCI_CONFIG_TEMPLATE
     .replace('__PORT__', String(cfg.dashboardPort))
     .replace('__MODE__', cfg.operationMode)
@@ -1195,7 +1207,7 @@ export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtF
     .replace('__RENEW_DAY__', String(cfg.renewDay))
     .replace('__BLOCK_NEW__', cfg.blockNewDevices ? '1' : '0')
     .replace('__ENABLE_QOS__', cfg.enableQos ? '1' : '0')
-    .replace('__ADMIN_HASH__', `$(printf %s '${cfg.initialPassword.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)`);
+    .replace('__ADMIN_HASH__', adminHashExpr);
 
   const pkgCmd = `# OpenWrt 25.12.6 uses apk
 apk update
@@ -1261,7 +1273,7 @@ uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d' 2>/dev/null || true
 uci commit dhcp 2>/dev/null || true
 
 # 7. Write UCI config (/etc/config/quotamgr)
-ADMIN_HASH=$(printf %s '${cfg.initialPassword.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)
+ADMIN_HASH=${customPw ? `$(printf %s '${customPw.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)` : "''"}
 cat << EOF_CFG > /etc/config/quotamgr
 config global 'main'
 \toption enabled '1'
@@ -1325,7 +1337,7 @@ echo ""
 echo "================================================="
 echo " Installation Complete!"
 echo " Dashboard URL : http://$LAN_IP:${cfg.dashboardPort}"
-echo " Admin Password: ${computeSimpleSha256Hint(cfg.initialPassword)}"
+echo " Auth Mode     : ${customPw ? 'Custom password enabled' : 'Direct LAN access (no default admin account)'}"
 echo "================================================="
 `;
 

@@ -68,7 +68,14 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
     if (pwDraft.trim().length < 4) return;
     onUpdateSettings({ adminPassword: pwDraft.trim() });
     setPwDraft('');
-    setSavedMsg('تم تحديث كلمة مرور لوحة الراوتر.');
+    setSavedMsg('تم تعيين كلمة مرور مخصّصة للوحة الراوتر.');
+    setTimeout(() => setSavedMsg(null), 3000);
+  };
+
+  const handleClearPassword = () => {
+    onUpdateSettings({ adminPassword: '' });
+    setPwDraft('');
+    setSavedMsg('تم إلغاء كلمة المرور (دخول مباشر من الشبكة المحلية).');
     setTimeout(() => setSavedMsg(null), 3000);
   };
 
@@ -338,15 +345,24 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
                 type="password"
                 value={pwDraft}
                 onChange={(e) => setPwDraft(e.target.value)}
-                placeholder="كلمة مرور جديدة للوحة (4 أحرف على الأقل)"
+                placeholder="تعيين كلمة مرور مخصّصة (اختياري · 4 أحرف+)"
                 className="flex-1 px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               />
               <button
                 type="submit"
                 className="px-3 py-1.5 text-xs font-medium bg-slate-900 dark:bg-sky-600 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-sky-700 whitespace-nowrap"
               >
-                تحديث كلمة المرور
+                {settings.adminPassword ? 'تغيير كلمة المرور' : 'تفعيل كلمة مرور'}
               </button>
+              {settings.adminPassword && (
+                <button
+                  type="button"
+                  onClick={handleClearPassword}
+                  className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 whitespace-nowrap"
+                >
+                  إلغاء الحماية
+                </button>
+              )}
             </form>
           </div>
 

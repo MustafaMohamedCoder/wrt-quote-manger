@@ -190,14 +190,15 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
 
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              كلمة مرور الدخول الأولية
+              كلمة مرور الحماية (اختياري)
             </label>
             <input
-              type="text"
+              type="password"
               value={buildConfig.initialPassword}
               onChange={(e) =>
-                onChangeConfig({ initialPassword: e.target.value || 'admin' })
+                onChangeConfig({ initialPassword: e.target.value })
               }
+              placeholder="اتركه فارغاً للدخول المباشر بدون حساب افتراضي"
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono"
             />
           </div>

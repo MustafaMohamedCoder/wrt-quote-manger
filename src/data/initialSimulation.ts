@@ -16,7 +16,7 @@ export const INITIAL_SETTINGS: BundleSettings = {
   gamingPriority: true,
   operationMode: 'router',
   dashboardPort: 8088,
-  adminPassword: 'admin',
+  adminPassword: '',
 };
 
 export const INITIAL_DNS_FILTER: DnsFilterConfig = {
