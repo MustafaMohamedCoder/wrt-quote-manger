@@ -12,6 +12,11 @@ const UCI_CONFIG_TEMPLATE = `config global 'main'
 \toption adblock '0'
 \toption adultblock '0'
 \toption gambleblock '0'
+\toption dns_preset 'cloudflare_family'
+\toption dns_primary '1.1.1.3'
+\toption dns_secondary '1.0.0.3'
+\toption force_dns '0'
+\toption dns_cache '1500'
 \toption lan_if 'br-lan'
 \toption wan_if ''
 \toption admin_hash '__ADMIN_HASH__'
@@ -48,6 +53,7 @@ stop_service() {
 \t\tcp /tmp/quotamgr/state.json /etc/quotamgr/state.json
 \tfi
 \tnft delete table inet quota_mgr 2>/dev/null || true
+\tnft delete table inet quota_dns 2>/dev/null || true
 \tnft delete table bridge quota_bridge 2>/dev/null || true
 \tLAN_IF="$(uci -q get quotamgr.main.lan_if || echo br-lan)"
 \ttc qdisc del dev "$LAN_IF" root 2>/dev/null || true
@@ -104,7 +110,8 @@ function load_config() {
 \t\tlan_if: c.get('quotamgr', 'main', 'lan_if') || 'br-lan',
 \t\tadblock: (c.get('quotamgr', 'main', 'adblock') || '0') == '1',
 \t\tadultblock: (c.get('quotamgr', 'main', 'adultblock') || '0') == '1',
-\t\tgambleblock: (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1'
+\t\tgambleblock: (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1',
+\t\tforce_dns: (c.get('quotamgr', 'main', 'force_dns') || '0') == '1'
 \t};
 }
 
@@ -491,6 +498,21 @@ function sync_tc_shaping(state, cfg) {
 \t}
 }
 
+let last_dns_sig = '';
+function sync_force_dns(cfg) {
+\tlet sig = (cfg.force_dns ? '1' : '0') + '|' + cfg.lan_if;
+\tif (sig == last_dns_sig) return;
+\tlast_dns_sig = sig;
+\trun('nft delete table inet quota_dns 2>/dev/null');
+\tif (!cfg.force_dns) return;
+\tnft_batch([
+\t\t'add table inet quota_dns',
+\t\t'add chain inet quota_dns prerouting { type nat hook prerouting priority dstnat; policy accept; }',
+\t\t'add rule inet quota_dns prerouting iifname "' + cfg.lan_if + '" udp dport 53 redirect to :53',
+\t\t'add rule inet quota_dns prerouting iifname "' + cfg.lan_if + '" tcp dport 53 redirect to :53'
+\t]);
+}
+
 let state = load_state();
 let tick = 0;
 let last_tick_ts = time();
@@ -504,6 +526,7 @@ while (true) {
 \t\tlast_tick_ts = now_ts;
 
 \t\tensure_nft_base(cfg.mode);
+\t\tsync_force_dns(cfg);
 \t\tdiscover_devices(state, cfg.lan_if);
 \t\tlet counts = read_nft_counters(cfg.mode);
 \t\tsync_device_rules(state, cfg.mode, counts);
@@ -605,16 +628,17 @@ function is_authed() {
 
 function load_state() {
 \tlet raw = readfile(RAM_STATE) || readfile(FLASH_STATE);
-\tif (!raw) return { users: {}, devices: {}, custom_domains: [], logs: [] };
+\tif (!raw) return { users: {}, devices: {}, custom_domains: [], local_records: [], logs: [] };
 \ttry {
 \t\tlet d = json(raw);
 \t\td.users = d.users || {};
 \t\td.devices = d.devices || {};
 \t\td.custom_domains = d.custom_domains || [];
+\t\td.local_records = d.local_records || [];
 \t\td.logs = d.logs || [];
 \t\treturn d;
 \t} catch (e) {
-\t\treturn { users: {}, devices: {}, custom_domains: [], logs: [] };
+\t\treturn { users: {}, devices: {}, custom_domains: [], local_records: [], logs: [] };
 \t}
 }
 
@@ -636,7 +660,21 @@ function rebuild_dns(c, st) {
 \tlet ad = (c.get('quotamgr', 'main', 'adblock') || '0') == '1';
 \tlet adult = (c.get('quotamgr', 'main', 'adultblock') || '0') == '1';
 \tlet gamble = (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1';
-\tlet lines = ['# Managed by QuotaManager'];
+\tlet preset = c.get('quotamgr', 'main', 'dns_preset') || 'isp';
+\tlet d1 = replace(trim(c.get('quotamgr', 'main', 'dns_primary') || ''), /[^0-9.]/g, '');
+\tlet d2 = replace(trim(c.get('quotamgr', 'main', 'dns_secondary') || ''), /[^0-9.]/g, '');
+\tlet cache = +(c.get('quotamgr', 'main', 'dns_cache') || 1500);
+\tlet lines = ['# Managed by QuotaManager', 'cache-size=' + cache];
+\tif (preset != 'isp' && d1) {
+\t\tpush(lines, 'no-resolv');
+\t\tpush(lines, 'server=' + d1);
+\t\tif (d2) push(lines, 'server=' + d2);
+\t}
+\tfor (let rec in (st.local_records || [])) {
+\t\tlet h = replace(trim(rec.host || ''), /[^a-zA-Z0-9.-]/g, '');
+\t\tlet ip = replace(trim(rec.ip || ''), /[^0-9.]/g, '');
+\t\tif (h && ip) push(lines, 'address=/' + h + '/' + ip);
+\t}
 \tif (ad) {
 \t\tfor (let dom in ['doubleclick.net', 'googlesyndication.com', 'adservice.google.com', 'ads.facebook.com', 'taboola.com', 'outbrain.com', 'adnxs.com']) {
 \t\t\tpush(lines, 'local=/' + dom + '/');
@@ -706,7 +744,12 @@ if (action == 'state') {
 \t\t\tmode: c.get('quotamgr', 'main', 'mode') || 'router',
 \t\t\tadblock: (c.get('quotamgr', 'main', 'adblock') || '0') == '1',
 \t\t\tadultblock: (c.get('quotamgr', 'main', 'adultblock') || '0') == '1',
-\t\t\tgambleblock: (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1'
+\t\t\tgambleblock: (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1',
+\t\t\tdns_preset: c.get('quotamgr', 'main', 'dns_preset') || 'cloudflare_family',
+\t\t\tdns_primary: c.get('quotamgr', 'main', 'dns_primary') || '1.1.1.3',
+\t\t\tdns_secondary: c.get('quotamgr', 'main', 'dns_secondary') || '1.0.0.3',
+\t\t\tforce_dns: (c.get('quotamgr', 'main', 'force_dns') || '0') == '1',
+\t\t\tdns_cache: +(c.get('quotamgr', 'main', 'dns_cache') || 1500)
 \t\t},
 \t\tsystem: {
 \t\t\tmem_total_mb: m_tot ? int(+m_tot[1] / 1024) : 256,
@@ -786,15 +829,19 @@ if (action == 'update_settings') {
 \tif (body.adblock != null) c.set('quotamgr', 'main', 'adblock', body.adblock ? '1' : '0');
 \tif (body.adultblock != null) c.set('quotamgr', 'main', 'adultblock', body.adultblock ? '1' : '0');
 \tif (body.gambleblock != null) c.set('quotamgr', 'main', 'gambleblock', body.gambleblock ? '1' : '0');
+\tif (body.dns_preset != null) c.set('quotamgr', 'main', 'dns_preset', '' + body.dns_preset);
+\tif (body.dns_primary != null) c.set('quotamgr', 'main', 'dns_primary', '' + body.dns_primary);
+\tif (body.dns_secondary != null) c.set('quotamgr', 'main', 'dns_secondary', '' + body.dns_secondary);
+\tif (body.force_dns != null) c.set('quotamgr', 'main', 'force_dns', body.force_dns ? '1' : '0');
+\tif (body.dns_cache != null) c.set('quotamgr', 'main', 'dns_cache', '' + (+body.dns_cache));
 \tif (body.new_password && length(body.new_password) >= 4) {
 \t\tc.set('quotamgr', 'main', 'admin_hash', sha256(body.new_password));
 \t}
 \tc.save('quotamgr');
 \tc.commit('quotamgr');
-\tif (body.custom_domains != null) {
-\t\tst.custom_domains = body.custom_domains;
-\t\tsave_state(st);
-\t}
+\tif (body.custom_domains != null) st.custom_domains = body.custom_domains;
+\tif (body.local_records != null) st.local_records = body.local_records;
+\tif (body.custom_domains != null || body.local_records != null) save_state(st);
 \trebuild_dns(c, st);
 \trespond(200, { ok: true });
 }
@@ -859,8 +906,9 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
     <div class="tabs">
       <button class="act" onclick="tab('ov',this)">نظرة عامة</button>
       <button onclick="tab('us',this)">المستخدمون</button>
+      <button onclick="tab('dn',this)">DNS</button>
       <button onclick="tab('lg',this)">سجلات النشاط</button>
-      <button onclick="tab('st',this)">الإعدادات والحظر</button>
+      <button onclick="tab('st',this)">الإعدادات</button>
     </div>
     <div class="row">
       <button id="tbtn" onclick="toggleTheme()">الوضع الليلي</button>
@@ -909,9 +957,46 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
         <div style="overflow:auto"><table><thead><tr><th>الوقت</th><th>الحدث</th><th>الجهاز</th><th>التفاصيل</th><th>إجراء</th></tr></thead><tbody id="logs"></tbody></table></div>
       </div>
     </div>
+    <div id="p_dn" class="hide">
+      <div class="card" style="margin-bottom:16px">
+        <strong>إعدادات خوادم DNS والحماية (dnsmasq)</strong>
+        <div class="row" style="margin-top:12px">
+          <select id="dp" onchange="pickDnsPreset()">
+            <option value="cloudflare_family">Cloudflare Family (1.1.1.3)</option>
+            <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+            <option value="adguard">AdGuard DNS (94.140.14.14)</option>
+            <option value="quad9">Quad9 (9.9.9.9)</option>
+            <option value="google">Google (8.8.8.8)</option>
+            <option value="isp">DNS مزود الخدمة</option>
+            <option value="custom">مخصص</option>
+          </select>
+          <input id="d1" dir="ltr" placeholder="Primary DNS" style="width:130px">
+          <input id="d2" dir="ltr" placeholder="Secondary DNS" style="width:130px">
+          <select id="dc"><option value="500">Cache 500</option><option value="1500">Cache 1500</option><option value="3000">Cache 3000</option></select>
+          <label><input id="dfd" type="checkbox"> إجبار DNS (Port 53)</label>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <label><input id="sad" type="checkbox"> حظر الإعلانات</label>
+          <label><input id="sadu" type="checkbox"> حظر المواقع الإباحية</label>
+          <label><input id="sgam" type="checkbox"> حظر القمار</label>
+          <button class="pri" onclick="saveDns()">تطبيق إعدادات DNS</button>
+        </div>
+      </div>
+      <div class="card">
+        <strong>نطاقات محجوبة مخصصة وسجلات محلية</strong>
+        <div class="row" style="margin-top:10px">
+          <input id="cdom" dir="ltr" placeholder="example.com" style="width:180px">
+          <button onclick="addDom()">حظر نطاق</button>
+          <input id="lhost" dir="ltr" placeholder="quota.lan" style="width:140px">
+          <input id="lip" dir="ltr" placeholder="192.168.1.1" style="width:130px">
+          <button onclick="addRec()">إضافة سجل محلي</button>
+        </div>
+        <div class="muted" id="dlist" style="margin-top:10px"></div>
+      </div>
+    </div>
     <div id="p_st" class="hide">
       <div class="card">
-        <strong>إعدادات الباقة والحماية</strong>
+        <strong>إعدادات الباقة والأمان</strong>
         <div class="row" style="margin-top:12px">
           <label>سعة الباقة (GB) <input id="sb" type="number" style="width:90px"></label>
           <label>يوم التجديد <input id="sr" type="number" min="1" max="28" style="width:70px"></label>
@@ -919,9 +1004,6 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
           <label><input id="sqos" type="checkbox"> تفعيل QoS وتخفيض Ping</label>
         </div>
         <div class="row" style="margin-top:12px">
-          <label><input id="sad" type="checkbox"> حظر الإعلانات</label>
-          <label><input id="sadu" type="checkbox"> حظر المواقع الإباحية</label>
-          <label><input id="sgam" type="checkbox"> حظر مواقع القمار</label>
           <input id="spw" type="password" placeholder="تغيير كلمة المرور (اختياري)">
           <button class="pri" onclick="saveSettings()">حفظ الإعدادات</button>
           <button class="dng" onclick="resetCycle()">تصفير استهلاك الدورة</button>
@@ -936,11 +1018,13 @@ function applyTheme(d){document.body.classList.toggle('dark',d);const b=document
 function toggleTheme(){const d=!document.body.classList.contains('dark');localStorage.setItem('qm_theme',d?'dark':'light');applyTheme(d);}
 applyTheme(localStorage.getItem('qm_theme')==='dark');
 async function api(a,b){const r=await fetch('/cgi-bin/api?action='+a,{method:b?'POST':'GET',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});return r.json();}
-function tab(id,btn){['ov','us','lg','st'].forEach(x=>document.getElementById('p_'+x).classList.toggle('hide',x!==id));document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('act'));btn.classList.add('act');}
+function tab(id,btn){['ov','us','dn','lg','st'].forEach(x=>document.getElementById('p_'+x).classList.toggle('hide',x!==id));document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('act'));btn.classList.add('act');}
 async function doLogin(){const res=await api('login',{password:document.getElementById('pw').value});if(res.ok){load();}else{document.getElementById('lerr').textContent=res.error||'خطأ';}}
 async function logout(){await api('logout',{});location.reload();}
 function fmtG(b){return (b/GB).toFixed(2)+' GB';}
 function fmtS(bps){return bps>1048576?(bps/1048576).toFixed(1)+' Mbps':Math.round(bps/1024)+' Kbps';}
+const DNS_P={cloudflare_family:['1.1.1.3','1.0.0.3'],cloudflare:['1.1.1.1','1.0.0.1'],adguard:['94.140.14.14','94.140.15.15'],quad9:['9.9.9.9','149.112.112.112'],google:['8.8.8.8','8.8.4.4'],isp:['','']};
+function pickDnsPreset(){const v=document.getElementById('dp').value;if(DNS_P[v]){document.getElementById('d1').value=DNS_P[v][0];document.getElementById('d2').value=DNS_P[v][1];}}
 async function load(){
   const res=await api('state');
   if(!res.ok){document.getElementById('login').classList.remove('hide');document.getElementById('app').classList.add('hide');return;}
@@ -1000,9 +1084,15 @@ function render(){
     <td>\${unk?'<span style="color:#d97706">جهاز غريب</span> · ':''}\${l.note||''}</td>
     <td>\${dv?(dv.blocked?\`<button onclick="devOp('\${l.mac}','unblock',{})">فك الحظر</button>\`:\`<button class="dng" onclick="devOp('\${l.mac}','block',{})">حظر</button>\`):'-'}</td></tr>\`;
   }).join(''):'<tr><td colspan="5" class="muted">لا توجد سجلات نشاط بعد</td></tr>';
+  document.getElementById('dp').value=cfg.dns_preset||'cloudflare_family';
+  document.getElementById('d1').value=cfg.dns_primary||'';document.getElementById('d2').value=cfg.dns_secondary||'';
+  document.getElementById('dc').value=String(cfg.dns_cache||1500);document.getElementById('dfd').checked=!!cfg.force_dns;
+  document.getElementById('sad').checked=cfg.adblock;document.getElementById('sadu').checked=cfg.adultblock;document.getElementById('sgam').checked=cfg.gambleblock;
+  const doms=(st.custom_domains||[]).map(d=>\`\${d} <a href="#" onclick="delDom('\${d}');return false" style="color:#ef4444">×</a>\`).join(' · ');
+  const recs=(st.local_records||[]).map(r=>\`\${r.host}→\${r.ip} <a href="#" onclick="delRec('\${r.host}');return false" style="color:#ef4444">×</a>\`).join(' · ');
+  document.getElementById('dlist').innerHTML='محجوب: '+(doms||'لا يوجد')+'<br>سجلات محلية: '+(recs||'لا يوجد');
   document.getElementById('sb').value=cfg.bundle_gb;document.getElementById('sr').value=cfg.renew_day;
   document.getElementById('sbn').checked=cfg.block_new_devices;document.getElementById('sqos').checked=cfg.enable_qos;
-  document.getElementById('sad').checked=cfg.adblock;document.getElementById('sadu').checked=cfg.adultblock;document.getElementById('sgam').checked=cfg.gambleblock;
 }
 function d_act(b,p){return (b==='true'||p==='true')?'unblock':'pause';}
 async function setLim(mac,dn,up){EDIT_MAC=null;await devOp(mac,'set_limit',{limit_down_mbps:dn,limit_up_mbps:up});}
@@ -1011,7 +1101,12 @@ async function devOp(mac,op,extra){await api('device_action',Object.assign({mac,
 async function saveUser(){await api('save_user',{name:document.getElementById('un').value,allocation_mode:document.getElementById('um').value,fixed_gb:+document.getElementById('ug').value,daily_cap_gb:+document.getElementById('ud').value,speed_down_mbps:+document.getElementById('uspd').value});load();}
 async function delUser(id){await api('delete_user',{id});load();}
 async function clearLogs(){await api('clear_logs',{});load();}
-async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,adblock:document.getElementById('sad').checked,adultblock:document.getElementById('sadu').checked,gambleblock:document.getElementById('sgam').checked,new_password:document.getElementById('spw').value});load();}
+async function saveDns(){await api('update_settings',{dns_preset:document.getElementById('dp').value,dns_primary:document.getElementById('d1').value,dns_secondary:document.getElementById('d2').value,dns_cache:+document.getElementById('dc').value,force_dns:document.getElementById('dfd').checked,adblock:document.getElementById('sad').checked,adultblock:document.getElementById('sadu').checked,gambleblock:document.getElementById('sgam').checked});load();}
+async function addDom(){const v=document.getElementById('cdom').value.trim();if(!v)return;const arr=(DATA.state.custom_domains||[]).concat([v]);document.getElementById('cdom').value='';await api('update_settings',{custom_domains:arr});load();}
+async function delDom(v){const arr=(DATA.state.custom_domains||[]).filter(x=>x!==v);await api('update_settings',{custom_domains:arr});load();}
+async function addRec(){const h=document.getElementById('lhost').value.trim(),ip=document.getElementById('lip').value.trim();if(!h||!ip)return;const arr=(DATA.state.local_records||[]).concat([{host:h,ip:ip}]);document.getElementById('lhost').value='';await api('update_settings',{local_records:arr});load();}
+async function delRec(h){const arr=(DATA.state.local_records||[]).filter(x=>x.host!==h);await api('update_settings',{local_records:arr});load();}
+async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,new_password:document.getElementById('spw').value});load();}
 async function resetCycle(){if(confirm('تصفير استهلاك الدورة؟')){await api('reset_cycle',{});load();}}
 load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').classList.contains('hide')&&!EDIT_MAC)load();},6000);
 </script>
@@ -1113,6 +1208,11 @@ config global 'main'
 \toption adblock '0'
 \toption adultblock '0'
 \toption gambleblock '0'
+\toption dns_preset 'cloudflare_family'
+\toption dns_primary '1.1.1.3'
+\toption dns_secondary '1.0.0.3'
+\toption force_dns '0'
+\toption dns_cache '1500'
 \toption lan_if 'br-lan'
 \toption admin_hash '$ADMIN_HASH'
 EOF_CFG

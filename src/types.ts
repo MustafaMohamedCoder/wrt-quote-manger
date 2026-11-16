@@ -36,11 +36,31 @@ export interface NetworkDevice {
   lastSeen: string;
 }
 
+export type DnsPresetId =
+  | 'isp'
+  | 'cloudflare'
+  | 'cloudflare_family'
+  | 'adguard'
+  | 'google'
+  | 'quad9'
+  | 'custom';
+
+export interface DnsLocalRecord {
+  host: string;
+  ip: string;
+}
+
 export interface DnsFilterConfig {
+  preset: DnsPresetId;
+  primaryDns: string;
+  secondaryDns: string;
+  forceDnsRedirect: boolean;
+  cacheSize: number;
   adblock: boolean;
   adultblock: boolean;
   gambleblock: boolean;
   customDomains: string[];
+  localRecords: DnsLocalRecord[];
 }
 
 export interface BundleSettings {

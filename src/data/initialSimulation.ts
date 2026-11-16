@@ -20,10 +20,16 @@ export const INITIAL_SETTINGS: BundleSettings = {
 };
 
 export const INITIAL_DNS_FILTER: DnsFilterConfig = {
+  preset: 'cloudflare_family',
+  primaryDns: '1.1.1.3',
+  secondaryDns: '1.0.0.3',
+  forceDnsRedirect: true,
+  cacheSize: 1500,
   adblock: true,
   adultblock: true,
   gambleblock: false,
   customDomains: ['tiktok-ads.com', 'doubleclick.net'],
+  localRecords: [{ host: 'quota.lan', ip: '192.168.1.1' }],
 };
 
 export const INITIAL_USERS: UserProfile[] = [

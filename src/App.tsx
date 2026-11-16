@@ -26,6 +26,11 @@ const UsersAndFiltersView = lazy(() =>
     default: m.UsersAndFiltersView,
   }))
 );
+const DnsSectionView = lazy(() =>
+  import('./components/DnsSectionView').then((m) => ({
+    default: m.DnsSectionView,
+  }))
+);
 const ActivityLogsView = lazy(() =>
   import('./components/ActivityLogsView').then((m) => ({
     default: m.ActivityLogsView,
@@ -42,7 +47,7 @@ const InstallGuideView = lazy(() =>
   }))
 );
 
-type ActiveTab = 'dashboard' | 'users' | 'logs' | 'builder' | 'guide';
+type ActiveTab = 'dashboard' | 'users' | 'dns' | 'logs' | 'builder' | 'guide';
 
 const MAX_TRAFFIC_SAMPLES = 30;
 
@@ -492,7 +497,8 @@ export default function App() {
             {(
               [
                 { id: 'dashboard', label: 'لوحة الراوتر' },
-                { id: 'users', label: 'المستخدمون والحظر' },
+                { id: 'users', label: 'المستخدمون' },
+                { id: 'dns', label: 'قسم DNS' },
                 { id: 'logs', label: 'سجلات النشاط' },
                 { id: 'builder', label: 'توليد الحزمة' },
                 { id: 'guide', label: 'دليل التركيب' },
@@ -580,12 +586,17 @@ export default function App() {
           {activeTab === 'users' && (
             <UsersAndFiltersView
               settings={settings}
-              dnsFilter={dnsFilter}
               users={users}
               devices={devices}
               onSaveUser={handleSaveUser}
               onDeleteUser={handleDeleteUser}
               onUpdateSettings={handleUpdateSettings}
+            />
+          )}
+
+          {activeTab === 'dns' && (
+            <DnsSectionView
+              dnsFilter={dnsFilter}
               onUpdateDns={(next) =>
                 setDnsFilter((prev) => ({ ...prev, ...next }))
               }
