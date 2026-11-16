@@ -94,3 +94,10 @@ export interface ActivityLogEntry {
   note: string;
 }
 
+export interface TrafficSample {
+  timeLabel: string;
+  downMbps: number;
+  upMbps: number;
+}
+
+

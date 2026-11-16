@@ -9,6 +9,7 @@ import {
   Sliders,
   WifiOff,
 } from 'lucide-react';
+import { AggregateTrafficChart } from './AggregateTrafficChart';
 import { UserUsageChart } from './UserUsageChart';
 import { UserDailyStatsTable } from './UserDailyStatsTable';
 import { QuotaAlertsBanner } from './QuotaAlertsBanner';
@@ -16,6 +17,7 @@ import { computeUserQuotasAndAlerts } from '../utils/quotaAlerts';
 import type {
   BundleSettings,
   NetworkDevice,
+  TrafficSample,
   UserProfile,
 } from '../types';
 
@@ -23,6 +25,7 @@ interface RouterDashboardViewProps {
   settings: BundleSettings;
   users: UserProfile[];
   devices: NetworkDevice[];
+  trafficHistory: TrafficSample[];
   simRunning: boolean;
   darkMode: boolean;
   onToggleSim: () => void;
@@ -42,6 +45,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
   settings,
   users,
   devices,
+  trafficHistory,
   simRunning,
   darkMode,
   onToggleSim,
@@ -293,6 +297,13 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Real-time Aggregate Router Traffic Chart */}
+      <AggregateTrafficChart
+        samples={trafficHistory}
+        darkMode={darkMode}
+        simRunning={simRunning}
+      />
+
       {/* Monthly User Usage Charts */}
       <UserUsageChart
         bundleGb={settings.bundleGb}
@@ -436,40 +447,69 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
 
                       <td className="py-3 px-4 align-top font-mono tabular-nums">
                         {editingLimitMac === d.mac ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <input
-                              type="number"
-                              min={0}
-                              max={1000}
-                              value={draftDown}
-                              onChange={(e) => setDraftDown(Number(e.target.value))}
-                              className="w-16 px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                              title="حد التحميل Mbps"
-                            />
-                            <span className="text-xs text-slate-400">/</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={1000}
-                              value={draftUp}
-                              onChange={(e) => setDraftUp(Number(e.target.value))}
-                              className="w-16 px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                              title="حد الرفع Mbps"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveLimit(d.mac)}
-                              className="px-2 py-1 text-xs bg-sky-600 text-white rounded hover:bg-sky-700"
-                            >
-                              حفظ
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingLimitMac(null)}
-                              className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded text-slate-600 dark:text-slate-300"
-                            >
-                              إلغاء
-                            </button>
+                          <div className="space-y-2 min-w-[230px]">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <label className="flex items-center gap-1 text-[11px] font-sans text-slate-600 dark:text-slate-400">
+                                <span>↓</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={1000}
+                                  value={draftDown}
+                                  onChange={(e) => setDraftDown(Number(e.target.value))}
+                                  className="w-14 px-2 py-1 text-xs font-mono border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                                  title="حد التحميل Mbps (0 = مفتوح)"
+                                />
+                              </label>
+                              <label className="flex items-center gap-1 text-[11px] font-sans text-slate-600 dark:text-slate-400">
+                                <span>↑</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={1000}
+                                  value={draftUp}
+                                  onChange={(e) => setDraftUp(Number(e.target.value))}
+                                  className="w-14 px-2 py-1 text-xs font-mono border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                                  title="حد الرفع Mbps (0 = مفتوح)"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveLimit(d.mac)}
+                                className="px-2 py-1 text-xs font-sans bg-sky-600 text-white rounded hover:bg-sky-700"
+                              >
+                                حفظ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingLimitMac(null)}
+                                className="px-2 py-1 text-xs font-sans border border-slate-300 dark:border-slate-700 rounded text-slate-600 dark:text-slate-300"
+                              >
+                                إلغاء
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1 font-sans">
+                              {[
+                                { label: '1M', d: 1, u: 1 },
+                                { label: '3M', d: 3, u: 1 },
+                                { label: '5M', d: 5, u: 2 },
+                                { label: '10M', d: 10, u: 3 },
+                                { label: '20M', d: 20, u: 5 },
+                                { label: 'مفتوح', d: 0, u: 0 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.label}
+                                  type="button"
+                                  onClick={() => {
+                                    setDraftDown(preset.d);
+                                    setDraftUp(preset.u);
+                                  }}
+                                  className="px-1.5 py-0.5 text-[11px] rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         ) : (
                           <div>
@@ -479,9 +519,14 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400">
                               السقف:{' '}
-                              {effectiveDownLimit > 0
-                                ? `${effectiveDownLimit} / ${effectiveUpLimit || 'مفتوح'} Mbps`
+                              {effectiveDownLimit > 0 || effectiveUpLimit > 0
+                                ? `${effectiveDownLimit || 'مفتوح'} / ${effectiveUpLimit || 'مفتوح'} Mbps`
                                 : 'مفتوح'}
+                              {d.limitDownMbps > 0 || d.limitUpMbps > 0
+                                ? ' (مخصص)'
+                                : assignedUser && (assignedUser.speedDownMbps > 0 || assignedUser.speedUpMbps > 0)
+                                ? ' (المستخدم)'
+                                : ''}
                             </div>
                           </div>
                         )}

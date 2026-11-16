@@ -426,47 +426,68 @@ const has_tc = (run('command -v tc >/dev/null 2>&1') === 0);
 let last_tc_sig = '';
 function sync_tc_shaping(state, cfg) {
 \tif (!has_tc) return;
+\tlet lif = shquote(cfg.lan_if);
 \tif (!cfg.enable_qos) {
 \t\tif (last_tc_sig != 'off') {
-\t\t\trun('tc qdisc del dev ' + shquote(cfg.lan_if) + ' root 2>/dev/null');
+\t\t\trun('tc qdisc del dev ' + lif + ' root 2>/dev/null');
+\t\t\trun('tc qdisc del dev ' + lif + ' ingress 2>/dev/null');
+\t\t\trun('tc qdisc del dev ifb0 root 2>/dev/null');
 \t\t\tlast_tc_sig = 'off';
 \t\t}
 \t\treturn;
 \t}
 
-\tlet rules = [];
+\tlet dn_rules = [];
+\tlet up_rules = [];
 \tlet idx = 10;
 \tfor (let mac, d in state.devices) {
 \t\tif (!d.ip || d.blocked || d.paused) continue;
-\t\tlet cap = d.limit_down_mbps || 0;
-\t\tif (cap == 0 && d.user_id && state.users[d.user_id]) {
-\t\t\tcap = state.users[d.user_id].speed_down_mbps || 0;
+\t\tlet d_cap = d.limit_down_mbps || 0;
+\t\tlet u_cap = d.limit_up_mbps || 0;
+\t\tif (d_cap == 0 && d.user_id && state.users[d.user_id]) {
+\t\t\td_cap = state.users[d.user_id].speed_down_mbps || 0;
 \t\t}
-\t\tif (cap > 0) {
-\t\t\tpush(rules, d.ip + ':' + cap + ':' + idx);
-\t\t\tidx++;
+\t\tif (u_cap == 0 && d.user_id && state.users[d.user_id]) {
+\t\t\tu_cap = state.users[d.user_id].speed_up_mbps || 0;
 \t\t}
+\t\tif (d_cap > 0) push(dn_rules, d.ip + ':' + d_cap + ':' + idx);
+\t\tif (u_cap > 0) push(up_rules, d.ip + ':' + u_cap + ':' + idx);
+\t\tif (d_cap > 0 || u_cap > 0) idx++;
 \t}
-\tlet sig = cfg.lan_if + '|' + (cfg.gaming_priority ? '1' : '0') + '|' + join(',', rules);
+\tlet sig = cfg.lan_if + '|' + (cfg.gaming_priority ? '1' : '0') + '|' + join(',', dn_rules) + '|' + join(',', up_rules);
 \tif (sig == last_tc_sig) return;
 \tlast_tc_sig = sig;
 
-\tlet lif = shquote(cfg.lan_if);
 \trun('tc qdisc del dev ' + lif + ' root 2>/dev/null');
-\tif (length(rules) == 0 && !cfg.gaming_priority) return;
+\trun('tc qdisc del dev ' + lif + ' ingress 2>/dev/null');
+\trun('tc qdisc del dev ifb0 root 2>/dev/null');
 
-\trun('tc qdisc add dev ' + lif + ' root handle 1: htb default 999');
-\trun('tc class add dev ' + lif + ' parent 1: classid 1:1 htb rate 1000mbit');
-\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:999 htb rate 950mbit ceil 1000mbit');
-\trun('tc qdisc add dev ' + lif + ' parent 1:999 fq_codel');
-\tfor (let entry in rules) {
-\t\tlet p = split(entry, ':');
-\t\tlet ip = p[0];
-\t\tlet mbps = p[1];
-\t\tlet cid = p[2];
-\t\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:' + cid + ' htb rate ' + mbps + 'mbit ceil ' + mbps + 'mbit');
-\t\trun('tc qdisc add dev ' + lif + ' parent 1:' + cid + ' fq_codel');
-\t\trun('tc filter add dev ' + lif + ' protocol ip parent 1:0 prio 1 u32 match ip dst ' + ip + '/32 flowid 1:' + cid);
+\tif (length(dn_rules) > 0 || cfg.gaming_priority) {
+\t\trun('tc qdisc add dev ' + lif + ' root handle 1: htb default 999');
+\t\trun('tc class add dev ' + lif + ' parent 1: classid 1:1 htb rate 1000mbit');
+\t\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:999 htb rate 950mbit ceil 1000mbit');
+\t\trun('tc qdisc add dev ' + lif + ' parent 1:999 fq_codel');
+\t\tfor (let entry in dn_rules) {
+\t\t\tlet p = split(entry, ':');
+\t\t\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
+\t\t\trun('tc qdisc add dev ' + lif + ' parent 1:' + p[2] + ' fq_codel');
+\t\t\trun('tc filter add dev ' + lif + ' protocol ip parent 1:0 prio 1 u32 match ip dst ' + p[0] + '/32 flowid 1:' + p[2]);
+\t\t}
+\t}
+
+\tif (length(up_rules) > 0 && run('ip link set ifb0 up 2>/dev/null') === 0) {
+\t\trun('tc qdisc add dev ' + lif + ' handle ffff: ingress 2>/dev/null');
+\t\trun('tc filter add dev ' + lif + ' parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0 2>/dev/null');
+\t\trun('tc qdisc add dev ifb0 root handle 2: htb default 999');
+\t\trun('tc class add dev ifb0 parent 2: classid 2:1 htb rate 1000mbit');
+\t\trun('tc class add dev ifb0 parent 2:1 classid 2:999 htb rate 950mbit ceil 1000mbit');
+\t\trun('tc qdisc add dev ifb0 parent 2:999 fq_codel');
+\t\tfor (let entry in up_rules) {
+\t\t\tlet p = split(entry, ':');
+\t\t\trun('tc class add dev ifb0 parent 2:1 classid 2:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
+\t\t\trun('tc qdisc add dev ifb0 parent 2:' + p[2] + ' fq_codel');
+\t\t\trun('tc filter add dev ifb0 parent 2:0 prio 1 u32 match ip src ' + p[0] + '/32 flowid 2:' + p[2]);
+\t\t}
 \t}
 }
 
@@ -910,7 +931,7 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
   </div>
 </div>
 <script>
-const GB=1073741824;let DATA=null;
+const GB=1073741824;let DATA=null,EDIT_MAC=null;
 function applyTheme(d){document.body.classList.toggle('dark',d);const b=document.getElementById('tbtn');if(b)b.textContent=d?'الوضع النهاري':'الوضع الليلي';}
 function toggleTheme(){const d=!document.body.classList.contains('dark');localStorage.setItem('qm_theme',d?'dark':'light');applyTheme(d);}
 applyTheme(localStorage.getItem('qm_theme')==='dark');
@@ -939,13 +960,21 @@ function render(){
   const uopts=['<option value="">غير معين</option>'].concat(Object.values(st.users).map(u=>\`<option value="\${u.id}">\${u.name}</option>\`)).join('');
   document.getElementById('devs').innerHTML=Object.values(st.devices).map(d=>{
     const status=d.blocked?'محظور':d.paused?'متوقف مؤقتاً':(!d.user_id&&cfg.block_new_devices)?'محظور (جهاز جديد)':'متصل';
+    const usr=d.user_id?st.users[d.user_id]:null;
+    const effD=d.limit_down_mbps>0?d.limit_down_mbps:(usr?usr.speed_down_mbps||0:0);
+    const effU=d.limit_up_mbps>0?d.limit_up_mbps:(usr?usr.speed_up_mbps||0:0);
+    const capTxt=(effD>0||effU>0)?('سقف: '+(effD||'مفتوح')+'/'+(effU||'مفتوح')+'M'):'سقف: مفتوح';
+    const spdCell=EDIT_MAC===d.mac
+      ?\`<div class="row"><input id="ed_d" type="number" min="0" value="\${d.limit_down_mbps||0}" style="width:58px" title="تحميل Mbps"><input id="ed_u" type="number" min="0" value="\${d.limit_up_mbps||0}" style="width:58px" title="رفع Mbps"><button class="pri" onclick="saveLim('\${d.mac}')">حفظ</button><button onclick="EDIT_MAC=null;render()">×</button></div><div class="row" style="margin-top:4px"><button onclick="setLim('\${d.mac}',2,1)">2M</button><button onclick="setLim('\${d.mac}',5,2)">5M</button><button onclick="setLim('\${d.mac}',10,3)">10M</button><button onclick="setLim('\${d.mac}',0,0)">مفتوح</button></div>\`
+      :\`<div>↓\${fmtS(d.live_down_bps||0)}</div><div class="muted">\${capTxt}</div>\`;
     return \`<tr><td><b>\${d.hostname}</b><div class="muted">\${d.mac} · \${d.ip||'-'}</div></td>
     <td><select onchange="devOp('\${d.mac}','assign',{user_id:this.value})">\${uopts.replace('value="'+d.user_id+'"','value="'+d.user_id+'" selected')}</select></td>
     <td class="num" style="font-size:13px">\${fmtG(d.used_bytes||0)}</td>
-    <td class="num" style="font-size:13px">↓\${fmtS(d.live_down_bps||0)}</td>
+    <td class="num" style="font-size:13px">\${spdCell}</td>
     <td>\${status}</td>
     <td class="row">
       <button onclick="devOp('\${d.mac}',d_act('\${d.blocked}','\${d.paused}'))">\${(d.blocked||d.paused)?'تشغيل':'إيقاف'}</button>
+      <button onclick="EDIT_MAC='\${d.mac}';render()">السرعة</button>
       <button class="dng" onclick="devOp('\${d.mac}','kick',{})">طرد</button>
     </td></tr>\`;
   }).join('');
@@ -976,13 +1005,15 @@ function render(){
   document.getElementById('sad').checked=cfg.adblock;document.getElementById('sadu').checked=cfg.adultblock;document.getElementById('sgam').checked=cfg.gambleblock;
 }
 function d_act(b,p){return (b==='true'||p==='true')?'unblock':'pause';}
+async function setLim(mac,dn,up){EDIT_MAC=null;await devOp(mac,'set_limit',{limit_down_mbps:dn,limit_up_mbps:up});}
+async function saveLim(mac){await setLim(mac,+document.getElementById('ed_d').value||0,+document.getElementById('ed_u').value||0);}
 async function devOp(mac,op,extra){await api('device_action',Object.assign({mac,op},extra));load();}
 async function saveUser(){await api('save_user',{name:document.getElementById('un').value,allocation_mode:document.getElementById('um').value,fixed_gb:+document.getElementById('ug').value,daily_cap_gb:+document.getElementById('ud').value,speed_down_mbps:+document.getElementById('uspd').value});load();}
 async function delUser(id){await api('delete_user',{id});load();}
 async function clearLogs(){await api('clear_logs',{});load();}
 async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,adblock:document.getElementById('sad').checked,adultblock:document.getElementById('sadu').checked,gambleblock:document.getElementById('sgam').checked,new_password:document.getElementById('spw').value});load();}
 async function resetCycle(){if(confirm('تصفير استهلاك الدورة؟')){await api('reset_cycle',{});load();}}
-load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').classList.contains('hide'))load();},6000);
+load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').classList.contains('hide')&&!EDIT_MAC)load();},6000);
 </script>
 </body>
 </html>

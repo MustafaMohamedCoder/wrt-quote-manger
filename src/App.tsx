@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Moon, Sun } from 'lucide-react';
 import {
   INITIAL_ACTIVITY_LOGS,
@@ -9,6 +9,7 @@ import {
   MAX_ACTIVITY_LOGS,
 } from './data/initialSimulation';
 import { RouterDashboardView } from './components/RouterDashboardView';
+import { computeUserQuotasAndAlerts } from './utils/quotaAlerts';
 import type {
   ActivityLogEntry,
   ActivityLogEventType,
@@ -16,6 +17,7 @@ import type {
   DnsFilterConfig,
   NetworkDevice,
   OpenWrtBuildConfig,
+  TrafficSample,
   UserProfile,
 } from './types';
 
@@ -42,6 +44,57 @@ const InstallGuideView = lazy(() =>
 
 type ActiveTab = 'dashboard' | 'users' | 'logs' | 'builder' | 'guide';
 
+const MAX_TRAFFIC_SAMPLES = 30;
+
+function formatTrafficClock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+function computeAggregateTraffic(
+  bundleGb: number,
+  blockNewDevices: boolean,
+  users: UserProfile[],
+  devices: NetworkDevice[]
+): { downMbps: number; upMbps: number } {
+  const { quotaMap } = computeUserQuotasAndAlerts(bundleGb, users, devices);
+  let down = 0;
+  let up = 0;
+  for (const d of devices) {
+    if (!d.online || d.blocked || d.paused) continue;
+    if (!d.userId || !quotaMap.has(d.userId)) {
+      if (blockNewDevices) continue;
+    } else if (quotaMap.get(d.userId)!.isExhausted) {
+      continue;
+    }
+    down += d.liveDownMbps;
+    up += d.liveUpMbps;
+  }
+  return {
+    downMbps: Number(down.toFixed(1)),
+    upMbps: Number(up.toFixed(1)),
+  };
+}
+
+function createInitialTrafficHistory(): TrafficSample[] {
+  const base = computeAggregateTraffic(
+    INITIAL_SETTINGS.bundleGb,
+    INITIAL_SETTINGS.blockNewDevices,
+    INITIAL_USERS,
+    INITIAL_DEVICES
+  );
+  const now = Date.now();
+  const multipliers = [
+    0.72, 0.85, 0.78, 0.94, 1.08, 0.92, 0.88, 1.05, 1.15, 0.96, 0.84, 0.91,
+    1.03, 0.95, 1.0,
+  ];
+  return multipliers.map((m, idx) => ({
+    timeLabel: formatTrafficClock(now - (multipliers.length - 1 - idx) * 1000),
+    downMbps: Number((base.downMbps * m).toFixed(1)),
+    upMbps: Number((base.upMbps * m).toFixed(1)),
+  }));
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [settings, setSettings] = useState<BundleSettings>(INITIAL_SETTINGS);
@@ -51,6 +104,10 @@ export default function App() {
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(
     INITIAL_ACTIVITY_LOGS
   );
+  const [trafficHistory, setTrafficHistory] = useState<TrafficSample[]>(
+    createInitialTrafficHistory
+  );
+  const isFirstTrafficEffect = useRef(true);
   const [simRunning, setSimRunning] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
@@ -130,8 +187,11 @@ export default function App() {
 
           const capDown =
             d.limitDownMbps > 0 ? d.limitDownMbps : u?.speedDownMbps || 25;
+          const capUp =
+            d.limitUpMbps > 0 ? d.limitUpMbps : u?.speedUpMbps || 0;
           const down = Math.min(capDown, Math.max(0.5, Number((Math.random() * capDown * 0.65).toFixed(1))));
-          const up = Number((down * 0.22).toFixed(1));
+          const rawUp = Number((down * 0.22).toFixed(1));
+          const up = capUp > 0 ? Math.min(capUp, rawUp) : rawUp;
           // Accelerated simulation step (~0.08 GB per tick) for visible testing
           const addedGb = Number(((down / 100) * 0.35).toFixed(3));
           return {
@@ -147,6 +207,30 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [simRunning, users, settings.bundleGb, settings.blockNewDevices]);
+
+  // Append aggregate traffic point whenever devices/quota state changes
+  useEffect(() => {
+    if (isFirstTrafficEffect.current) {
+      isFirstTrafficEffect.current = false;
+      return;
+    }
+    const { downMbps, upMbps } = computeAggregateTraffic(
+      settings.bundleGb,
+      settings.blockNewDevices,
+      users,
+      devices
+    );
+    setTrafficHistory((prev) =>
+      [
+        ...prev,
+        {
+          timeLabel: formatTrafficClock(Date.now()),
+          downMbps,
+          upMbps,
+        },
+      ].slice(-MAX_TRAFFIC_SAMPLES)
+    );
+  }, [devices, users, settings.bundleGb, settings.blockNewDevices]);
 
   const appendActivityLog = useCallback(
     (
@@ -222,15 +306,25 @@ export default function App() {
     [appendActivityLog]
   );
 
-  const handleSetDeviceLimit = (mac: string, downMbps: number, upMbps: number) => {
-    setDevices((prev) =>
-      prev.map((d) =>
-        d.mac === mac
-          ? { ...d, limitDownMbps: downMbps, limitUpMbps: upMbps }
-          : d
-      )
-    );
-  };
+  const handleSetDeviceLimit = useCallback(
+    (mac: string, downMbps: number, upMbps: number) => {
+      setDevices((prev) =>
+        prev.map((d) => {
+          if (d.mac !== mac) return d;
+          const nextDown = downMbps > 0 ? Math.min(d.liveDownMbps, downMbps) : d.liveDownMbps;
+          const nextUp = upMbps > 0 ? Math.min(d.liveUpMbps, upMbps) : d.liveUpMbps;
+          return {
+            ...d,
+            limitDownMbps: downMbps,
+            limitUpMbps: upMbps,
+            liveDownMbps: nextDown,
+            liveUpMbps: nextUp,
+          };
+        })
+      );
+    },
+    []
+  );
 
   const handleAddTestDevice = useCallback(() => {
     const rnd = Math.floor(10 + Math.random() * 89);
@@ -464,6 +558,7 @@ export default function App() {
             settings={settings}
             users={users}
             devices={devices}
+            trafficHistory={trafficHistory}
             simRunning={simRunning}
             darkMode={darkMode}
             onToggleSim={() => setSimRunning((v) => !v)}
