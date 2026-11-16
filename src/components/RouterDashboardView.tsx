@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pause,
   Play,
@@ -9,9 +9,23 @@ import {
   Sliders,
   WifiOff,
 } from 'lucide-react';
-import { AggregateTrafficChart } from './AggregateTrafficChart';
-import { UserUsageChart } from './UserUsageChart';
 import { UserDailyStatsTable } from './UserDailyStatsTable';
+
+const AggregateTrafficChart = lazy(() =>
+  import('./AggregateTrafficChart').then((m) => ({
+    default: m.AggregateTrafficChart,
+  }))
+);
+const UserUsageChart = lazy(() =>
+  import('./UserUsageChart').then((m) => ({
+    default: m.UserUsageChart,
+  }))
+);
+const BundleDistributionPieChart = lazy(() =>
+  import('./BundleDistributionPieChart').then((m) => ({
+    default: m.BundleDistributionPieChart,
+  }))
+);
 import { QuotaAlertsBanner } from './QuotaAlertsBanner';
 import { computeUserQuotasAndAlerts } from '../utils/quotaAlerts';
 import type {
@@ -298,19 +312,51 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
       </div>
 
       {/* Real-time Aggregate Router Traffic Chart */}
-      <AggregateTrafficChart
-        samples={trafficHistory}
-        darkMode={darkMode}
-        simRunning={simRunning}
-      />
+      <Suspense
+        fallback={
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 h-[312px] flex items-center justify-center text-xs text-slate-500 dark:text-slate-400">
+            جاري تحميل رسم حركة البيانات الحية...
+          </div>
+        }
+      >
+        <AggregateTrafficChart
+          samples={trafficHistory}
+          darkMode={darkMode}
+          simRunning={simRunning}
+        />
+      </Suspense>
 
       {/* Monthly User Usage Charts */}
-      <UserUsageChart
-        bundleGb={settings.bundleGb}
-        users={users}
-        devices={devices}
-        darkMode={darkMode}
-      />
+      <Suspense
+        fallback={
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 h-[356px] flex items-center justify-center text-xs text-slate-500 dark:text-slate-400">
+            جاري تحميل الرسوم البيانية للاستهلاك...
+          </div>
+        }
+      >
+        <UserUsageChart
+          bundleGb={settings.bundleGb}
+          users={users}
+          devices={devices}
+          darkMode={darkMode}
+        />
+      </Suspense>
+
+      {/* Bundle Distribution Pie Chart */}
+      <Suspense
+        fallback={
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 h-[356px] flex items-center justify-center text-xs text-slate-500 dark:text-slate-400">
+            جاري تحميل الرسم الدائري لتوزيع الباقة...
+          </div>
+        }
+      >
+        <BundleDistributionPieChart
+          bundleGb={settings.bundleGb}
+          users={users}
+          devices={devices}
+          darkMode={darkMode}
+        />
+      </Suspense>
 
       {/* 7-Day Daily Stats Table */}
       <UserDailyStatsTable users={users} devices={devices} />

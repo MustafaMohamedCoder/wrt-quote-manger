@@ -4,8 +4,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -133,45 +131,13 @@ const UserBarTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
   );
 };
 
-interface PieDatum {
-  name: string;
-  value: number;
-  pct: number;
-  color: string;
-}
-
-interface PieTooltipProps {
-  active?: boolean;
-  payload?: Array<{ payload: PieDatum }>;
-}
-
-const BundlePieTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
-  if (!active || !payload || payload.length === 0) return null;
-  const item = payload[0].payload;
-  return (
-    <div
-      dir="rtl"
-      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 shadow-md text-xs space-y-0.5"
-    >
-      <div className="font-medium text-slate-900 dark:text-slate-100">
-        {item.name}
-      </div>
-      <div className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
-        {item.value.toFixed(2)} GB ({item.pct.toFixed(1)}%)
-      </div>
-    </div>
-  );
-};
-
-const USER_SLICE_COLORS = ['#0284c7', '#0f766e', '#4f46e5', '#0ea5e9', '#64748b'];
-
 export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
   bundleGb,
   users,
   devices,
   darkMode,
 }) => {
-  const { userData, pieData, totalUsedGb } = useMemo(() => {
+  const userData = useMemo(() => {
     const { quotaMap } = computeUserQuotasAndAlerts(bundleGb, users, devices);
 
     const rows: UserChartDatum[] = users.map((u) => {
@@ -210,50 +176,8 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
       };
     });
 
-    const totalUsed = devices.reduce((sum, d) => sum + d.usedGb, 0);
-    const unassignedUsed = devices
-      .filter((d) => !d.userId || !users.some((u) => u.id === d.userId))
-      .reduce((sum, d) => sum + d.usedGb, 0);
-
-    const safeBundle = bundleGb || 1;
-    const slices: PieDatum[] = rows
-      .filter((r) => r.usedGb > 0)
-      .map((r, idx) => ({
-        name: r.name,
-        value: r.usedGb,
-        pct: (r.usedGb / safeBundle) * 100,
-        color: r.isCriticalOrExhausted
-          ? '#dc2626'
-          : USER_SLICE_COLORS[idx % USER_SLICE_COLORS.length],
-      }));
-
-    if (unassignedUsed > 0) {
-      const val = Number(unassignedUsed.toFixed(2));
-      slices.push({
-        name: 'أجهزة غير معينة',
-        value: val,
-        pct: (val / safeBundle) * 100,
-        color: '#64748b',
-      });
-    }
-
-    const bundleRemaining = Math.max(0, bundleGb - totalUsed);
-    if (bundleRemaining > 0) {
-      const val = Number(bundleRemaining.toFixed(2));
-      slices.push({
-        name: 'رصيد الباقة المتبقي',
-        value: val,
-        pct: (val / safeBundle) * 100,
-        color: darkMode ? '#1e293b' : '#e2e8f0',
-      });
-    }
-
-    return {
-      userData: rows,
-      pieData: slices,
-      totalUsedGb: totalUsed,
-    };
-  }, [bundleGb, users, devices, darkMode]);
+    return rows;
+  }, [bundleGb, users, devices]);
 
   const getBarColor = (entry: UserChartDatum) => {
     if (entry.isCriticalOrExhausted) return '#dc2626';
@@ -308,14 +232,14 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
           لا يوجد مستخدمون مسجلون لعرض الرسم البياني. أضف مستخدمين من تبويب «المستخدمون والحظر».
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-5 items-center">
+        <div className="pt-5">
           {/* Bar Chart: Used vs Remaining per user */}
-          <div className="lg:col-span-8 h-64" dir="ltr">
+          <div className="h-64" dir="ltr">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={userData}
                 margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
-                barSize={32}
+                barSize={36}
               >
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -358,72 +282,6 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
                 />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-
-          {/* Donut Breakdown: Share of Total Bundle */}
-          <div className="lg:col-span-4 lg:border-r lg:border-slate-100 dark:lg:border-slate-800 lg:pr-6 flex flex-col items-center">
-            <div className="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
-              توزيع الباقة الكلية ({bundleGb} GB)
-            </div>
-            <div className="w-full h-44 relative" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={48}
-                    outerRadius={72}
-                    paddingAngle={1.5}
-                    stroke="none"
-                    isAnimationActive={false}
-                  >
-                    {pieData.map((slice, idx) => (
-                      <Cell key={`${slice.name}-${idx}`} fill={slice.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<BundlePieTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  المستهلك
-                </span>
-                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono tabular-nums">
-                  {totalUsedGb.toFixed(1)} GB
-                </span>
-              </div>
-            </div>
-
-            <div className="w-full mt-2 space-y-1 text-xs">
-              {userData.map((u) => (
-                <div
-                  key={u.id}
-                  className="flex items-center justify-between text-slate-600 dark:text-slate-400"
-                >
-                  <span
-                    className={`truncate max-w-[140px] ${
-                      u.isCriticalOrExhausted
-                        ? 'text-red-700 dark:text-red-400 font-semibold'
-                        : ''
-                    }`}
-                  >
-                    {u.name}
-                  </span>
-                  <span
-                    className={`font-mono tabular-nums ${
-                      u.isCriticalOrExhausted
-                        ? 'text-red-700 dark:text-red-400 font-semibold'
-                        : 'text-slate-900 dark:text-slate-200'
-                    }`}
-                  >
-                    {u.usedGb.toFixed(1)} / {u.quotaGb.toFixed(1)} GB
-                  </span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}

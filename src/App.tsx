@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Moon, Sun } from 'lucide-react';
+import { Download, Moon, RotateCcw, Sun } from 'lucide-react';
 import {
   INITIAL_ACTIVITY_LOGS,
   INITIAL_DEVICES,
@@ -104,14 +104,66 @@ function createInitialTrafficHistory(): TrafficSample[] {
   }));
 }
 
+const SIM_STORAGE_KEY = 'qm_sim_state_v1';
+
+interface PersistedSimulation {
+  settings: BundleSettings;
+  dnsFilter: DnsFilterConfig;
+  users: UserProfile[];
+  devices: NetworkDevice[];
+  activityLogs: ActivityLogEntry[];
+}
+
+function loadSavedSimulation(): PersistedSimulation | null {
+  try {
+    const raw = localStorage.getItem(SIM_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedSimulation>;
+    if (
+      !parsed ||
+      !parsed.settings ||
+      !parsed.dnsFilter ||
+      !Array.isArray(parsed.users) ||
+      !Array.isArray(parsed.devices)
+    ) {
+      return null;
+    }
+    return {
+      settings: { ...INITIAL_SETTINGS, ...parsed.settings },
+      dnsFilter: { ...INITIAL_DNS_FILTER, ...parsed.dnsFilter },
+      users: parsed.users,
+      devices: parsed.devices,
+      activityLogs: Array.isArray(parsed.activityLogs)
+        ? parsed.activityLogs.slice(0, MAX_ACTIVITY_LOGS)
+        : INITIAL_ACTIVITY_LOGS,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
+  const savedSimRef = useRef<PersistedSimulation | null | undefined>(undefined);
+  if (savedSimRef.current === undefined) {
+    savedSimRef.current = loadSavedSimulation();
+  }
+  const initialSim = savedSimRef.current;
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [settings, setSettings] = useState<BundleSettings>(INITIAL_SETTINGS);
-  const [dnsFilter, setDnsFilter] = useState<DnsFilterConfig>(INITIAL_DNS_FILTER);
-  const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
-  const [devices, setDevices] = useState<NetworkDevice[]>(INITIAL_DEVICES);
+  const [settings, setSettings] = useState<BundleSettings>(
+    () => initialSim?.settings || INITIAL_SETTINGS
+  );
+  const [dnsFilter, setDnsFilter] = useState<DnsFilterConfig>(
+    () => initialSim?.dnsFilter || INITIAL_DNS_FILTER
+  );
+  const [users, setUsers] = useState<UserProfile[]>(
+    () => initialSim?.users || INITIAL_USERS
+  );
+  const [devices, setDevices] = useState<NetworkDevice[]>(
+    () => initialSim?.devices || INITIAL_DEVICES
+  );
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(
-    INITIAL_ACTIVITY_LOGS
+    () => initialSim?.activityLogs || INITIAL_ACTIVITY_LOGS
   );
   const [trafficHistory, setTrafficHistory] = useState<TrafficSample[]>(
     createInitialTrafficHistory
@@ -138,17 +190,67 @@ export default function App() {
     }
   }, [darkMode]);
 
-  const [buildConfig, setBuildConfig] = useState<OpenWrtBuildConfig>({
-    openwrtRelease: '25.12.6',
-    operationMode: INITIAL_SETTINGS.operationMode,
-    dashboardPort: INITIAL_SETTINGS.dashboardPort,
-    bundleGb: INITIAL_SETTINGS.bundleGb,
-    renewDay: INITIAL_SETTINGS.renewDay,
-    initialPassword: INITIAL_SETTINGS.adminPassword,
-    enableQos: INITIAL_SETTINGS.enableQos,
-    enableDnsFilter: true,
-    blockNewDevices: INITIAL_SETTINGS.blockNewDevices,
+  const [buildConfig, setBuildConfig] = useState<OpenWrtBuildConfig>(() => {
+    const s = initialSim?.settings || INITIAL_SETTINGS;
+    return {
+      openwrtRelease: '25.12.6',
+      operationMode: s.operationMode,
+      dashboardPort: s.dashboardPort,
+      bundleGb: s.bundleGb,
+      renewDay: s.renewDay,
+      initialPassword: s.adminPassword,
+      enableQos: s.enableQos,
+      enableDnsFilter: true,
+      blockNewDevices: s.blockNewDevices,
+    };
   });
+
+  // Debounced persistence so edits survive reloads with minimal storage writes
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      try {
+        localStorage.setItem(
+          SIM_STORAGE_KEY,
+          JSON.stringify({
+            settings,
+            dnsFilter,
+            users,
+            devices,
+            activityLogs,
+          })
+        );
+      } catch {
+        // Ignore storage quota errors
+      }
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [settings, dnsFilter, users, devices, activityLogs]);
+
+  const handleResetSimulationDefaults = useCallback(() => {
+    setSimRunning(false);
+    setSettings(INITIAL_SETTINGS);
+    setDnsFilter(INITIAL_DNS_FILTER);
+    setUsers(INITIAL_USERS);
+    setDevices(INITIAL_DEVICES);
+    setActivityLogs(INITIAL_ACTIVITY_LOGS);
+    setTrafficHistory(createInitialTrafficHistory());
+    setBuildConfig({
+      openwrtRelease: '25.12.6',
+      operationMode: INITIAL_SETTINGS.operationMode,
+      dashboardPort: INITIAL_SETTINGS.dashboardPort,
+      bundleGb: INITIAL_SETTINGS.bundleGb,
+      renewDay: INITIAL_SETTINGS.renewDay,
+      initialPassword: INITIAL_SETTINGS.adminPassword,
+      enableQos: INITIAL_SETTINGS.enableQos,
+      enableDnsFilter: true,
+      blockNewDevices: INITIAL_SETTINGS.blockNewDevices,
+    });
+    try {
+      localStorage.removeItem(SIM_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
 
   // Live traffic simulation loop so the user can test auto-cutoff & equal split
   useEffect(() => {
@@ -544,24 +646,36 @@ export default function App() {
             <span>دعم حصري لإصدار 25.12.6 (apk + ucode + fw4/nftables)</span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setDarkMode((prev) => !prev)}
-            aria-pressed={darkMode}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
-          >
-            {darkMode ? (
-              <>
-                <Sun className="w-3.5 h-3.5 text-amber-400" />
-                <span>الوضع النهاري</span>
-              </>
-            ) : (
-              <>
-                <Moon className="w-3.5 h-3.5 text-slate-600" />
-                <span>الوضع الليلي</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetSimulationDefaults}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
+              title="استعادة بيانات المحاكاة الافتراضية"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>استعادة الافتراضي</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDarkMode((prev) => !prev)}
+              aria-pressed={darkMode}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
+            >
+              {darkMode ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  <span>الوضع النهاري</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-slate-600" />
+                  <span>الوضع الليلي</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {activeTab === 'dashboard' && (

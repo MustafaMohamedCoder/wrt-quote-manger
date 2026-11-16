@@ -54,6 +54,7 @@ stop_service() {
 \tfi
 \tnft delete table inet quota_mgr 2>/dev/null || true
 \tnft delete table inet quota_dns 2>/dev/null || true
+\tnft delete table inet quota_limit 2>/dev/null || true
 \tnft delete table bridge quota_bridge 2>/dev/null || true
 \tLAN_IF="$(uci -q get quotamgr.main.lan_if || echo br-lan)"
 \ttc qdisc del dev "$LAN_IF" root 2>/dev/null || true
@@ -74,7 +75,7 @@ service_triggers() {
 const QUOTAMGRD_UCODE = `#!/usr/bin/ucode
 'use strict';
 
-import { readfile, writefile, popen, access } from 'fs';
+import { readfile, writefile, popen, stat } from 'fs';
 import { cursor } from 'uci';
 
 const RAM_STATE = '/tmp/quotamgr/state.json';
@@ -97,9 +98,15 @@ function capture(cmd) {
 \treturn out;
 }
 
+let last_cfg_mtime = -1;
+let cached_cfg = null;
 function load_config() {
+\tlet st = stat('/etc/config/quotamgr');
+\tlet mt = st ? st.mtime : 0;
+\tif (cached_cfg && mt == last_cfg_mtime) return cached_cfg;
+\tlast_cfg_mtime = mt;
 \tlet c = cursor();
-\treturn {
+\tcached_cfg = {
 \t\tenabled: (c.get('quotamgr', 'main', 'enabled') || '1') == '1',
 \t\tmode: c.get('quotamgr', 'main', 'mode') || 'router',
 \t\tbundle_gb: + (c.get('quotamgr', 'main', 'bundle_gb') || 140),
@@ -113,6 +120,7 @@ function load_config() {
 \t\tgambleblock: (c.get('quotamgr', 'main', 'gambleblock') || '0') == '1',
 \t\tforce_dns: (c.get('quotamgr', 'main', 'force_dns') || '0') == '1'
 \t};
+\treturn cached_cfg;
 }
 
 function default_state() {
@@ -158,12 +166,15 @@ function push_log(st, ev, d, note) {
 \twhile (length(st.logs) > 50) pop(st.logs);
 }
 
+let last_ram_mtime = 0;
 function save_ram_state(st) {
-\twritefile(RAM_STATE, sprintf('%.J', st));
+\twritefile(RAM_STATE, sprintf('%J', st));
+\tlet info = stat(RAM_STATE);
+\tif (info) last_ram_mtime = info.mtime;
 }
 
 function flush_flash_state(st) {
-\twritefile(FLASH_STATE, sprintf('%.J', st));
+\twritefile(FLASH_STATE, sprintf('%J', st));
 }
 
 let nft_ready = false;
@@ -429,18 +440,50 @@ function update_usage_and_quotas(state, cfg, counts, elapsed) {
 \tsync_blocked_sets(cfg, blocked_ips, blocked_macs);
 }
 
+function tc_batch(lines) {
+\tif (length(lines) == 0) return true;
+\tlet p = popen('tc -batch - 2>/dev/null', 'w');
+\tif (!p) return false;
+\tp.write(join('\\n', lines) + '\\n');
+\treturn p.close() === 0;
+}
+
 const has_tc = (run('command -v tc >/dev/null 2>&1') === 0);
 let last_tc_sig = '';
+let last_nft_lim_sig = '';
+function sync_nft_ratelimit(dn_rules, up_rules) {
+\tlet sig = join(',', dn_rules) + '|' + join(',', up_rules);
+\tif (sig == last_nft_lim_sig) return;
+\tlast_nft_lim_sig = sig;
+\trun('nft delete table inet quota_limit 2>/dev/null');
+\tif (length(dn_rules) == 0 && length(up_rules) == 0) return;
+\tlet cmds = [
+\t\t'add table inet quota_limit',
+\t\t'add chain inet quota_limit forward_lim { type filter hook forward priority -2; policy accept; }'
+\t];
+\tfor (let entry in dn_rules) {
+\t\tlet p = split(entry, ':');
+\t\tlet kbps = int((+p[1]) * 125);
+\t\tif (kbps > 0) push(cmds, 'add rule inet quota_limit forward_lim ip daddr ' + p[0] + ' limit rate over ' + kbps + ' kbytes/second drop');
+\t}
+\tfor (let entry in up_rules) {
+\t\tlet p = split(entry, ':');
+\t\tlet kbps = int((+p[1]) * 125);
+\t\tif (kbps > 0) push(cmds, 'add rule inet quota_limit forward_lim ip saddr ' + p[0] + ' limit rate over ' + kbps + ' kbytes/second drop');
+\t}
+\tnft_batch(cmds);
+}
+
 function sync_tc_shaping(state, cfg) {
-\tif (!has_tc) return;
-\tlet lif = shquote(cfg.lan_if);
+\tlet lif = cfg.lan_if;
 \tif (!cfg.enable_qos) {
-\t\tif (last_tc_sig != 'off') {
-\t\t\trun('tc qdisc del dev ' + lif + ' root 2>/dev/null');
-\t\t\trun('tc qdisc del dev ' + lif + ' ingress 2>/dev/null');
+\t\tif (has_tc && last_tc_sig != 'off') {
+\t\t\trun('tc qdisc del dev ' + shquote(lif) + ' root 2>/dev/null');
+\t\t\trun('tc qdisc del dev ' + shquote(lif) + ' ingress 2>/dev/null');
 \t\t\trun('tc qdisc del dev ifb0 root 2>/dev/null');
 \t\t\tlast_tc_sig = 'off';
 \t\t}
+\t\tsync_nft_ratelimit([], []);
 \t\treturn;
 \t}
 
@@ -461,41 +504,49 @@ function sync_tc_shaping(state, cfg) {
 \t\tif (u_cap > 0) push(up_rules, d.ip + ':' + u_cap + ':' + idx);
 \t\tif (d_cap > 0 || u_cap > 0) idx++;
 \t}
-\tlet sig = cfg.lan_if + '|' + (cfg.gaming_priority ? '1' : '0') + '|' + join(',', dn_rules) + '|' + join(',', up_rules);
+
+\tif (!has_tc) {
+\t\tsync_nft_ratelimit(dn_rules, up_rules);
+\t\treturn;
+\t}
+
+\tlet sig = lif + '|' + (cfg.gaming_priority ? '1' : '0') + '|' + join(',', dn_rules) + '|' + join(',', up_rules);
 \tif (sig == last_tc_sig) return;
 \tlast_tc_sig = sig;
 
-\trun('tc qdisc del dev ' + lif + ' root 2>/dev/null');
-\trun('tc qdisc del dev ' + lif + ' ingress 2>/dev/null');
+\trun('tc qdisc del dev ' + shquote(lif) + ' root 2>/dev/null');
+\trun('tc qdisc del dev ' + shquote(lif) + ' ingress 2>/dev/null');
 \trun('tc qdisc del dev ifb0 root 2>/dev/null');
 
+\tlet cmds = [];
 \tif (length(dn_rules) > 0 || cfg.gaming_priority) {
-\t\trun('tc qdisc add dev ' + lif + ' root handle 1: htb default 999');
-\t\trun('tc class add dev ' + lif + ' parent 1: classid 1:1 htb rate 1000mbit');
-\t\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:999 htb rate 950mbit ceil 1000mbit');
-\t\trun('tc qdisc add dev ' + lif + ' parent 1:999 fq_codel');
+\t\tpush(cmds, 'qdisc add dev ' + lif + ' root handle 1: htb default 999');
+\t\tpush(cmds, 'class add dev ' + lif + ' parent 1: classid 1:1 htb rate 1000mbit');
+\t\tpush(cmds, 'class add dev ' + lif + ' parent 1:1 classid 1:999 htb rate 950mbit ceil 1000mbit');
+\t\tpush(cmds, 'qdisc add dev ' + lif + ' parent 1:999 fq_codel');
 \t\tfor (let entry in dn_rules) {
 \t\t\tlet p = split(entry, ':');
-\t\t\trun('tc class add dev ' + lif + ' parent 1:1 classid 1:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
-\t\t\trun('tc qdisc add dev ' + lif + ' parent 1:' + p[2] + ' fq_codel');
-\t\t\trun('tc filter add dev ' + lif + ' protocol ip parent 1:0 prio 1 u32 match ip dst ' + p[0] + '/32 flowid 1:' + p[2]);
+\t\t\tpush(cmds, 'class add dev ' + lif + ' parent 1:1 classid 1:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
+\t\t\tpush(cmds, 'qdisc add dev ' + lif + ' parent 1:' + p[2] + ' fq_codel');
+\t\t\tpush(cmds, 'filter add dev ' + lif + ' protocol ip parent 1:0 prio 1 u32 match ip dst ' + p[0] + '/32 flowid 1:' + p[2]);
 \t\t}
 \t}
 
 \tif (length(up_rules) > 0 && run('ip link set ifb0 up 2>/dev/null') === 0) {
-\t\trun('tc qdisc add dev ' + lif + ' handle ffff: ingress 2>/dev/null');
-\t\trun('tc filter add dev ' + lif + ' parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0 2>/dev/null');
-\t\trun('tc qdisc add dev ifb0 root handle 2: htb default 999');
-\t\trun('tc class add dev ifb0 parent 2: classid 2:1 htb rate 1000mbit');
-\t\trun('tc class add dev ifb0 parent 2:1 classid 2:999 htb rate 950mbit ceil 1000mbit');
-\t\trun('tc qdisc add dev ifb0 parent 2:999 fq_codel');
+\t\tpush(cmds, 'qdisc add dev ' + lif + ' handle ffff: ingress');
+\t\tpush(cmds, 'filter add dev ' + lif + ' parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb0');
+\t\tpush(cmds, 'qdisc add dev ifb0 root handle 2: htb default 999');
+\t\tpush(cmds, 'class add dev ifb0 parent 2: classid 2:1 htb rate 1000mbit');
+\t\tpush(cmds, 'class add dev ifb0 parent 2:1 classid 2:999 htb rate 950mbit ceil 1000mbit');
+\t\tpush(cmds, 'qdisc add dev ifb0 parent 2:999 fq_codel');
 \t\tfor (let entry in up_rules) {
 \t\t\tlet p = split(entry, ':');
-\t\t\trun('tc class add dev ifb0 parent 2:1 classid 2:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
-\t\t\trun('tc qdisc add dev ifb0 parent 2:' + p[2] + ' fq_codel');
-\t\t\trun('tc filter add dev ifb0 parent 2:0 prio 1 u32 match ip src ' + p[0] + '/32 flowid 2:' + p[2]);
+\t\t\tpush(cmds, 'class add dev ifb0 parent 2:1 classid 2:' + p[2] + ' htb rate ' + p[1] + 'mbit ceil ' + p[1] + 'mbit');
+\t\t\tpush(cmds, 'qdisc add dev ifb0 parent 2:' + p[2] + ' fq_codel');
+\t\t\tpush(cmds, 'filter add dev ifb0 parent 2:0 prio 1 u32 match ip src ' + p[0] + '/32 flowid 2:' + p[2]);
 \t\t}
 \t}
+\ttc_batch(cmds);
 }
 
 let last_dns_sig = '';
@@ -518,6 +569,11 @@ let tick = 0;
 let last_tick_ts = time();
 
 while (true) {
+\tlet st_info = stat(RAM_STATE);
+\tif (st_info && st_info.mtime != last_ram_mtime) {
+\t\tstate = load_state();
+\t\tlast_ram_mtime = st_info.mtime;
+\t}
 \tlet cfg = load_config();
 \tif (cfg.enabled) {
 \t\tlet now_ts = time();
@@ -580,7 +636,7 @@ function respond(code, obj, extra_headers) {
 \t\tfor (let h in extra_headers) print(h + '\\r\\n');
 \t}
 \tprint('\\r\\n');
-\tprint(sprintf('%.J', obj));
+\tprint(sprintf('%J', obj));
 \texit(0);
 }
 
@@ -651,7 +707,7 @@ function add_log(st, ev, d, note) {
 }
 
 function save_state(st) {
-\tlet txt = sprintf('%.J', st);
+\tlet txt = sprintf('%J', st);
 \twritefile(RAM_STATE, txt);
 \twritefile(FLASH_STATE, txt);
 }
@@ -1120,7 +1176,18 @@ function computeSimpleSha256Hint(pw: string): string {
   return pw;
 }
 
+function compactBundleText(raw: string): string {
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n') + '\n';
+}
+
 export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtFile[] {
+  const daemonCode = compactBundleText(QUOTAMGRD_UCODE);
+  const cgiCode = compactBundleText(CGI_API_UCODE);
+  const htmlCode = compactBundleText(ROUTER_HTML_UI);
   const uciConfig = UCI_CONFIG_TEMPLATE
     .replace('__PORT__', String(cfg.dashboardPort))
     .replace('__MODE__', cfg.operationMode)
@@ -1219,20 +1286,17 @@ EOF_CFG
 
 # 8. Write /usr/sbin/quotamgrd
 cat << 'EOF_DAEMON' > /usr/sbin/quotamgrd
-${QUOTAMGRD_UCODE}
-EOF_DAEMON
+${daemonCode}EOF_DAEMON
 chmod +x /usr/sbin/quotamgrd
 
 # 9. Write /www-quota/cgi-bin/api
 cat << 'EOF_API' > /www-quota/cgi-bin/api
-${CGI_API_UCODE}
-EOF_API
+${cgiCode}EOF_API
 chmod +x /www-quota/cgi-bin/api
 
 # 10. Write /www-quota/index.html
 cat << 'EOF_HTML' > /www-quota/index.html
-${ROUTER_HTML_UI}
-EOF_HTML
+${htmlCode}EOF_HTML
 
 # 11. Write /etc/init.d/quotamgr
 cat << 'EOF_INIT' > /etc/init.d/quotamgr
@@ -1274,21 +1338,21 @@ echo "================================================="
     },
     {
       path: '/usr/sbin/quotamgrd',
-      description: 'محرك المراقبة والقطع اللحظي وتقسيم السرعة (ucode + nftables + tc)',
-      sizeBytes: new TextEncoder().encode(QUOTAMGRD_UCODE).length,
-      content: QUOTAMGRD_UCODE,
+      description: 'محرك المراقبة والقطع اللحظي وتقسيم السرعة (ucode + nftables + tc-batch)',
+      sizeBytes: new TextEncoder().encode(daemonCode).length,
+      content: daemonCode,
     },
     {
       path: '/www-quota/cgi-bin/api',
       description: 'واجهة البرمجة الخلفية CGI لخادم uhttpd بدون Python أو FastAPI',
-      sizeBytes: new TextEncoder().encode(CGI_API_UCODE).length,
-      content: CGI_API_UCODE,
+      sizeBytes: new TextEncoder().encode(cgiCode).length,
+      content: cgiCode,
     },
     {
       path: '/www-quota/index.html',
-      description: 'لوحة تحكم الويب المدمجة باللغة العربية (ملف واحد بدون اعتماد على الإنترنت)',
-      sizeBytes: new TextEncoder().encode(ROUTER_HTML_UI).length,
-      content: ROUTER_HTML_UI,
+      description: 'لوحة تحكم الويب المدمجة باللغة العربية (ملف واحد مضغوط بدون اعتماد على الإنترنت)',
+      sizeBytes: new TextEncoder().encode(htmlCode).length,
+      content: htmlCode,
     },
     {
       path: '/etc/init.d/quotamgr',
