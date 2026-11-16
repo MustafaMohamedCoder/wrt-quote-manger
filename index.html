@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Halo G920 QuotaManager — OpenWrt 25.12</title>
+    <meta
+      name="description"
+      content="إعادة بناء كاملة وخفيفة لنظام إدارة وتقسيم باقة الإنترنت المنزلية ليتوافق مع راوتر Halo G920 وأحدث إصدارات OpenWrt بدون Python."
+    />
+    <meta property="og:title" content="Halo G920 QuotaManager — OpenWrt 25.12" />
+    <meta
+      property="og:description"
+      content="إعادة بناء كاملة وخفيفة لنظام إدارة وتقسيم باقة الإنترنت المنزلية ليتوافق مع راوتر Halo G920 وأحدث إصدارات OpenWrt بدون Python."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      try {
+        var t = localStorage.getItem('qm_theme');
+        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

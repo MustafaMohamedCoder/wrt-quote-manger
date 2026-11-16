@@ -1,0 +1,8 @@
+{
+  "name": "Halo G920 QuotaManager — OpenWrt 25.12",
+  "description": "إعادة بناء كاملة وخفيفة لنظام إدارة وتقسيم باقة الإنترنت المنزلية ليتوافق مع راوتر Halo G920 وأحدث إصدارات OpenWrt بدون Python.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
