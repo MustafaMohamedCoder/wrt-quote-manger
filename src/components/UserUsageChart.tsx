@@ -257,7 +257,7 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
                   axisLine={false}
                   tickLine={false}
                   unit=" GB"
-                  width={56}
+                  width={54}
                 />
                 <Tooltip
                   content={<UserBarTooltip />}

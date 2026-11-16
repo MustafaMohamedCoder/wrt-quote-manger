@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2, UserPlus } from 'lucide-react';
 import type {
   BundleSettings,
@@ -30,8 +30,13 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
   const [dailyCapGb, setDailyCapGb] = useState<number>(0);
   const [speedDown, setSpeedDown] = useState<number>(15);
   const [speedUp, setSpeedUp] = useState<number>(5);
+  const [adminUserDraft, setAdminUserDraft] = useState(settings.adminUsername);
   const [pwDraft, setPwDraft] = useState('');
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAdminUserDraft(settings.adminUsername);
+  }, [settings.adminUsername]);
 
   const { equalShareGb, fixedTotalGb, equalCount } = useMemo(() => {
     const fixedSum = users
@@ -59,16 +64,22 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
       speedUpMbps: Math.max(0, speedUp),
     });
     setName('');
-    setSavedMsg('تمت إضافة المستخدم وتحديث قواعد nftables.');
+    setSavedMsg('تمت إضافة المستخدم وتحديث قواعد التوجيه والحماية.');
     setTimeout(() => setSavedMsg(null), 3000);
   };
 
   const handlePasswordChange = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pwDraft.trim().length < 4) return;
-    onUpdateSettings({ adminPassword: pwDraft.trim() });
+    const nextUser = adminUserDraft.trim();
+    const nextPw = pwDraft.trim();
+    if (!nextUser) return;
+    if (!nextPw && !settings.adminPassword) return;
+    onUpdateSettings({
+      adminUsername: nextUser,
+      ...(nextPw ? { adminPassword: nextPw } : {}),
+    });
     setPwDraft('');
-    setSavedMsg('تم تعيين كلمة مرور مخصّصة للوحة الراوتر.');
+    setSavedMsg('تم تحديث بيانات حساب الأدمن بنجاح.');
     setTimeout(() => setSavedMsg(null), 3000);
   };
 
@@ -176,7 +187,7 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
                 value={speedDown}
                 onChange={(e) => setSpeedDown(Number(e.target.value))}
                 className="w-full px-2 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono tabular-nums"
-                title="تحميل Mbps"
+                title="التحميل بـ Mbps"
               />
               <input
                 type="number"
@@ -184,7 +195,7 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
                 value={speedUp}
                 onChange={(e) => setSpeedUp(Number(e.target.value))}
                 className="w-full px-2 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono tabular-nums"
-                title="رفع Mbps"
+                title="الرفع بـ Mbps"
               />
             </div>
           </div>
@@ -296,7 +307,7 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
             إعدادات الباقة والأمان وجودة الألعاب (QoS)
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            ضبط سعة الباقة الشهرية وتفعيل أولوية الـ Ping للألعاب عبر FQ-CoDel، مع خيارات حظر DNS في قسم DNS المخصص.
+            ضبط سعة الباقة الشهرية وتفعيل أولوية Ping للألعاب، مع خيارات حظر النطاقات في قسم DNS والحظر.
           </p>
         </div>
 
@@ -339,30 +350,47 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
 
             <form
               onSubmit={handlePasswordChange}
-              className="pt-2 flex flex-wrap gap-2"
+              className="pt-2 space-y-2"
             >
-              <input
-                type="password"
-                value={pwDraft}
-                onChange={(e) => setPwDraft(e.target.value)}
-                placeholder="تعيين كلمة مرور مخصّصة (اختياري · 4 أحرف+)"
-                className="flex-1 px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-medium bg-slate-900 dark:bg-sky-600 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-sky-700 whitespace-nowrap"
-              >
-                {settings.adminPassword ? 'تغيير كلمة المرور' : 'تفعيل كلمة مرور'}
-              </button>
-              {settings.adminPassword && (
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                <span>حساب الأدمن</span>
+                <span className="font-mono">
+                  {settings.adminPassword
+                    ? `نشط (${settings.adminUsername || 'مصطفي'})`
+                    : 'دخول مباشر بدون كلمة مرور'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={adminUserDraft}
+                  onChange={(e) => setAdminUserDraft(e.target.value)}
+                  placeholder="اسم المستخدم (الافتراضي: مصطفي)"
+                  className="w-36 px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                />
+                <input
+                  type="password"
+                  value={pwDraft}
+                  onChange={(e) => setPwDraft(e.target.value)}
+                  placeholder="كلمة المرور (الافتراضية: 0)"
+                  className="flex-1 min-w-[140px] px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono"
+                />
                 <button
-                  type="button"
-                  onClick={handleClearPassword}
-                  className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 whitespace-nowrap"
+                  type="submit"
+                  className="px-3 py-1.5 text-xs font-medium bg-slate-900 dark:bg-sky-600 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-sky-700 whitespace-nowrap"
                 >
-                  إلغاء الحماية
+                  {settings.adminPassword ? 'حفظ حساب الأدمن' : 'تفعيل حساب الأدمن'}
                 </button>
-              )}
+                {settings.adminPassword && (
+                  <button
+                    type="button"
+                    onClick={handleClearPassword}
+                    className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/60 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 whitespace-nowrap"
+                  >
+                    إلغاء الحماية
+                  </button>
+                )}
+              </div>
             </form>
           </div>
 
@@ -370,10 +398,10 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
             <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <div>
                 <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                  حظر الأجهزة الجديدة تلقائياً (0 GB Safety)
+                  حظر الأجهزة الجديدة تلقائياً (أمان 0 GB)
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  أي جهاز غريب يتصل بالواي فاي يبدأ محظوراً حتى تعيّنه لمستخدم
+                  أي جهاز غريب يتصل بالـ Wi-Fi يبدأ محظوراً حتى تعيّنه لمستخدم
                 </div>
               </div>
               <input
@@ -389,10 +417,10 @@ export const UsersAndFiltersView: React.FC<UsersAndFiltersViewProps> = ({
             <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <div>
                 <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                  تفعيل تحديد السرعة وتثبيت Ping الألعاب (tc + fq_codel)
+                  تفعيل تحديد السرعة (QoS) وتثبيت Ping الألعاب
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  يمنع التحميلات الثقيلة من رفع زمن الاستجابة (Ping) أثناء اللعب
+                  يمنع التحميلات الثقيلة من رفع Ping أثناء اللعب
                 </div>
               </div>
               <input

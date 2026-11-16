@@ -45,9 +45,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               هندسة الحزمة الأصلية لإصدار OpenWrt 25.12.6 فقط
             </h2>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-              مبني ليعمل حصرياً على إصدار <span className="font-mono">OpenWrt 25.12.6</span> عبر{' '}
-              <span className="font-mono">apk</span> و <span className="font-mono">ucode</span> و{' '}
-              <span className="font-mono">fw4/nftables</span> ببصمة خفيفة للغاية بدون Python أو SQLite.
+              مبني ليعمل حصرياً على إصدار OpenWrt 25.12.6 عبر ucode و fw4 (nftables) ببصمة خفيفة للغاية بدون أي اعتماديات ثقيلة.
             </p>
           </div>
           <button
@@ -56,32 +54,32 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
-            <span>تنزيل install_openwrt.sh</span>
+            <span>تنزيل سكربت التثبيت</span>
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
           <div>
             <div className="text-slate-500 dark:text-slate-400">
-              حجم الملفات على الـ Flash
+              حجم الملفات على Flash
             </div>
             <div className="mt-1 font-mono tabular-nums text-lg font-semibold text-emerald-700 dark:text-emerald-400">
               {(totalCoreBytes / 1024).toFixed(1)} KB
             </div>
             <div className="mt-0.5 text-slate-500 dark:text-slate-400">
-              بدلاً من ~45 MB في نسخة Python + FastAPI
+              بدلاً من قرابة 45 MB في النسخ التقليدية الثقيلة
             </div>
           </div>
 
           <div>
             <div className="text-slate-500 dark:text-slate-400">
-              استهلاك الرام المتوقع
+              استهلاك RAM المتوقع
             </div>
             <div className="mt-1 font-mono tabular-nums text-lg font-semibold text-slate-900 dark:text-slate-100">
-              &lt; 4 MB RAM
+              أقل من 4 MB RAM
             </div>
             <div className="mt-0.5 text-slate-500 dark:text-slate-400">
-              يعمل بـ ucode المدمج أصلاً في OpenWrt و uhttpd
+              يعمل بمحرك ucode وخادم uhttpd المدمجين أصلاً في النظام
             </div>
           </div>
 
@@ -89,11 +87,11 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
             <div className="text-slate-500 dark:text-slate-400">
               دعم مدير الحزم والجدار الناري
             </div>
-            <div className="mt-1 font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100 font-mono">
               apk + fw4 (nftables)
             </div>
             <div className="mt-0.5 text-slate-500 dark:text-slate-400">
-              يعطّل flow_offloading تلقائياً لضمان دقة العدادات
+              يعطّل Flow Offloading لضمان دقة عدادات الحصص
             </div>
           </div>
         </div>
@@ -108,7 +106,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              إصدار OpenWrt المدعوم
+              الإصدار المدعوم
             </label>
             <select
               value={buildConfig.openwrtRelease}
@@ -117,13 +115,13 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               }
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             >
-              <option value="25.12.6">OpenWrt 25.12.6 فقط (مدير الحزم apk)</option>
+              <option value="25.12.6">OpenWrt 25.12.6 (فقط)</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              وضع تشغيل OpenWrt
+              وضع تشغيل الراوتر
             </label>
             <select
               value={buildConfig.operationMode}
@@ -134,14 +132,14 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               }
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             >
-              <option value="router">وضع الراوتر / البوابة (Router/NAT — الأفضل)</option>
-              <option value="ap">وضع الجسر على OpenWrt (Bridge AP — kmod-nft-bridge)</option>
+              <option value="router">وضع Router / Gateway (الأفضل)</option>
+              <option value="ap">وضع Bridge AP (نقطة وصول جسرية)</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              منفذ لوحة التحكم (Port)
+              Port لوحة التحكم
             </label>
             <input
               type="number"
@@ -190,7 +188,22 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
 
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              كلمة مرور الحماية (اختياري)
+              اسم مستخدم الأدمن (الافتراضي: مصطفي)
+            </label>
+            <input
+              type="text"
+              value={buildConfig.initialUsername}
+              onChange={(e) =>
+                onChangeConfig({ initialUsername: e.target.value })
+              }
+              placeholder="مصطفي"
+              className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+              كلمة مرور الأدمن (الافتراضية: 0)
             </label>
             <input
               type="password"
@@ -198,7 +211,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               onChange={(e) =>
                 onChangeConfig({ initialPassword: e.target.value })
               }
-              placeholder="اتركه فارغاً للدخول المباشر بدون حساب افتراضي"
+              placeholder="اتركه فارغاً لتعطيل القفل (الافتراضي: 0)"
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono"
             />
           </div>
@@ -212,7 +225,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               onChange={(e) => onChangeConfig({ enableQos: e.target.checked })}
               className="w-4 h-4 accent-sky-600"
             />
-            <span>تثبيت حزم تحديد السرعة وتثبيت Ping الألعاب (tc-tiny + fq_codel)</span>
+            <span>تثبيت حزم QoS (tc + fq_codel) وتثبيت Ping الألعاب</span>
           </label>
 
           <label className="inline-flex items-center gap-2 cursor-pointer">

@@ -78,7 +78,7 @@ export const UserDailyStatsTable: React.FC<UserDailyStatsTableProps> = React.mem
             جدول الإحصائيات — الاستهلاك اليومي خلال آخر 7 أيام
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            ملخص السحب اليومي بالجيجابايت لمراقبة الأنماط وتفادي استنفاد الباقة مبكراً
+            ملخص السحب اليومي بوحدة GB لمراقبة الأنماط وتفادي استنفاد الباقة مبكراً
           </p>
         </div>
         <div className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">

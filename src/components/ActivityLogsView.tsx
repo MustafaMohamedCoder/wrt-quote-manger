@@ -293,7 +293,7 @@ export const ActivityLogsView: React.FC<ActivityLogsViewProps> = React.memo(({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="بحث بالاسم، MAC، أو IP..."
+                placeholder="بحث بالاسم أو MAC أو IP..."
                 className="pr-9 pl-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 w-56"
               />
             </div>

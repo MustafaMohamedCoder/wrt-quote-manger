@@ -45,7 +45,7 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
-            <span>تنزيل install_openwrt.sh</span>
+            <span>تنزيل سكربت التثبيت</span>
           </button>
         </div>
 
@@ -55,23 +55,17 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             01. تجهيز راوتر OpenWrt وتوصيل الشبكة
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            لأفضل دقة في حساب الجيجابايت وتحديد السرعة، يُنصح بتشغيل راوتر{' '}
-            <span className="font-semibold text-slate-800 dark:text-slate-200">
-              OpenWrt
-            </span>{' '}
-            في وضع البوابة القياسي (Router/NAT):
+            لأفضل دقة في حساب GB وتحديد السرعة، يُنصح بتشغيل راوتر OpenWrt في وضع Router / Gateway القياسي:
           </p>
           <ul className="list-disc list-inside text-xs text-slate-700 dark:text-slate-300 space-y-1.5 pr-2">
             <li>
-              وصّل كابل الإنترنت الرئيسي إلى منفذ{' '}
-              <span className="font-semibold">WAN</span> في راوتر OpenWrt.
+              وصّل كابل الإنترنت الرئيسي إلى منفذ WAN في الراوتر.
             </li>
             <li>
-              اجعل جميع أجهزة المنزل تتصل بشبكة الواي فاي أو منافذ LAN الخاصة براوتر OpenWrt حتى يمر كامل الترافيك عبر جدار <span className="font-mono">fw4</span>.
+              اجعل جميع أجهزة المنزل تتصل بشبكة Wi-Fi أو منافذ LAN للراوتر حتى يمر كامل الاتصال عبر fw4 (nftables).
             </li>
             <li>
-              إذا كان راوتر OpenWrt مضبوطاً في وضع <span className="font-semibold">Bridge AP</span> فقط، اختر وضع Bridge AP من تبويب «توليد الحزمة» قبل التنزيل ليتم تثبيت{' '}
-              <span className="font-mono">kmod-nft-bridge</span>.
+              إذا كان الراوتر مضبوطاً في وضع Bridge AP فقط، اختر Bridge AP من تبويب «توليد الحزمة» قبل التنزيل ليتم تثبيت kmod-nft-bridge تلقائياً.
             </li>
           </ul>
         </div>
@@ -82,7 +76,7 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             02. إزالة بقايا النسخة الثقيلة السابقة (إذا كنت قد ثبتّها)
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            قبل تثبيت النسخة الخفيفة، تأكد من إيقاف خدمة بايثون القديمة وتحرير مساحة الـ Flash:
+            قبل تثبيت النسخة الخفيفة، تأكد من إيقاف الخدمة القديمة وتحرير مساحة Flash:
           </p>
           <div className="flex items-center justify-between gap-2 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg px-4 py-2.5 font-mono text-xs" dir="ltr">
             <span className="overflow-x-auto">
@@ -110,8 +104,7 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             03. رفع ملف التثبيت وتشغيله عبر SSH
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400">
-            انقل ملف <span className="font-mono">install_openwrt.sh</span> إلى مجلد{' '}
-            <span className="font-mono">/tmp/</span> على راوتر OpenWrt ثم شغّله:
+            انقل ملف التثبيت إلى مجلد /tmp على راوتر OpenWrt ثم شغّله:
           </p>
 
           <div className="space-y-2">
@@ -145,14 +138,30 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             04. فتح لوحة التحكم والتحقق من الأداء
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            بعد انتهاء السكربت خلال ثوانٍ، ستبقى واجهة OpenWrt الأساسية (LuCI) على منفذ{' '}
-            <span className="font-mono">80</span> كما هي، وتعمل لوحة QuotaManager المستقلة على الرابط:
+            بعد انتهاء السكربت خلال ثوانٍ، ستبقى واجهة LuCI الأساسية على Port 80 كما هي، وتعمل لوحة إدارة الحصص المستقلة على الرابط:
           </p>
           <div className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-xs text-slate-900 dark:text-slate-100" dir="ltr">
             http://192.168.1.1:{buildConfig.dashboardPort}
           </div>
+          {buildConfig.initialPassword.trim() ? (
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              بيانات الدخول الافتراضية: اسم المستخدم{' '}
+              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                {buildConfig.initialUsername.trim() || 'مصطفي'}
+              </span>{' '}
+              وكلمة المرور{' '}
+              <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">
+                {buildConfig.initialPassword.trim()}
+              </span>
+              .
+            </p>
+          ) : (
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              الدخول المباشر مفعل بدون كلمة مرور من شبكة LAN المحلية.
+            </p>
+          )}
           <p className="text-xs text-slate-600 dark:text-slate-400 pt-1">
-            للتحقق من استهلاك الرام والمساحة وسجل الخدمة في أي وقت:
+            للتحقق من استهلاك RAM ومساحة Flash وسجل الخدمة في أي وقت:
           </p>
           <div className="flex items-center justify-between gap-2 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg px-4 py-2.5 font-mono text-xs" dir="ltr">
             <span>{checkCmd}</span>

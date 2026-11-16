@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Moon, RotateCcw, Sun } from 'lucide-react';
+import { Download, Lock, Moon, RotateCcw, Sun } from 'lucide-react';
 import {
   INITIAL_ACTIVITY_LOGS,
   INITIAL_DEVICES,
@@ -104,7 +104,7 @@ function createInitialTrafficHistory(): TrafficSample[] {
   }));
 }
 
-const SIM_STORAGE_KEY = 'qm_sim_state_v1';
+const SIM_STORAGE_KEY = 'qm_sim_state_v4';
 
 interface PersistedSimulation {
   settings: BundleSettings;
@@ -170,6 +170,10 @@ export default function App() {
   );
   const isFirstTrafficEffect = useRef(true);
   const [simRunning, setSimRunning] = useState<boolean>(false);
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [loginUser, setLoginUser] = useState<string>('');
+  const [loginPass, setLoginPass] = useState<string>('');
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('qm_theme');
@@ -198,6 +202,7 @@ export default function App() {
       dashboardPort: s.dashboardPort,
       bundleGb: s.bundleGb,
       renewDay: s.renewDay,
+      initialUsername: s.adminUsername,
       initialPassword: s.adminPassword,
       enableQos: s.enableQos,
       enableDnsFilter: true,
@@ -240,6 +245,7 @@ export default function App() {
       dashboardPort: INITIAL_SETTINGS.dashboardPort,
       bundleGb: INITIAL_SETTINGS.bundleGb,
       renewDay: INITIAL_SETTINGS.renewDay,
+      initialUsername: INITIAL_SETTINGS.adminUsername,
       initialPassword: INITIAL_SETTINGS.adminPassword,
       enableQos: INITIAL_SETTINGS.enableQos,
       enableDnsFilter: true,
@@ -395,7 +401,7 @@ export default function App() {
         const target = prev.find((d) => d.mac === mac);
         if (target) {
           if (op === 'kick') {
-            appendActivityLog('disconnect', target, 'طرد وفصل فوري عبر Wi-Fi / LAN');
+            appendActivityLog('disconnect', target, 'طرد وفصل فوري عبر Wi-Fi أو Ethernet');
           } else if (op === 'block') {
             appendActivityLog('blocked', target, 'حظر دائم من لوحة التحكم');
           } else if (op === 'pause') {
@@ -445,9 +451,9 @@ export default function App() {
     const newDev: NetworkDevice = {
       mac: newMac,
       ip: `192.168.1.${160 + (rnd % 80)}`,
-      hostname: `New-Phone-${rnd}`,
-      vendor: 'Unknown',
-      connectionType: 'Wi-Fi 5G',
+      hostname: `هاتف جديد ${rnd}`,
+      vendor: 'غير معروف',
+      connectionType: 'Wi-Fi 5GHz',
       userId: null,
       usedGb: 0,
       dailyUsedGb: 0,
@@ -465,7 +471,7 @@ export default function App() {
       'new_device',
       newDev,
       settings.blockNewDevices
-        ? 'جهاز غريب متصل (محظور تلقائياً 0 GB حتى التعيين)'
+        ? 'جهاز غريب متصل (محظور تلقائياً عند 0 GB حتى التعيين)'
         : 'اتصال جهاز جديد بالشبكة'
     );
   }, [settings.blockNewDevices, appendActivityLog]);
@@ -484,7 +490,7 @@ export default function App() {
         target,
         nextOnline
           ? `عودة الاتصال عبر ${target.connectionType}`
-          : 'فصل من نقطة الوصول (انتهاء مهلة النشاط)'
+          : 'فصل من Access Point (انتهاء مهلة النشاط)'
       );
       return prev.map((d) =>
         d.mac === target.mac
@@ -543,6 +549,7 @@ export default function App() {
         enableQos: merged.enableQos,
         operationMode: merged.operationMode,
         dashboardPort: merged.dashboardPort,
+        initialUsername: merged.adminUsername,
         initialPassword: merged.adminPassword,
       }));
       return merged;
@@ -560,6 +567,7 @@ export default function App() {
         enableQos: merged.enableQos,
         operationMode: merged.operationMode,
         dashboardPort: merged.dashboardPort,
+        adminUsername: merged.initialUsername,
         adminPassword: merged.initialPassword,
       }));
       return merged;
@@ -584,6 +592,88 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [buildConfig]);
 
+  const handleUnlockLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const expectedUser = settings.adminUsername.trim() || 'مصطفي';
+    if (
+      loginUser.trim() === expectedUser &&
+      loginPass === settings.adminPassword
+    ) {
+      setIsLocked(false);
+      setLoginUser('');
+      setLoginPass('');
+      setLoginError(null);
+      return;
+    }
+    setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة.');
+  };
+
+  if (isLocked && settings.adminPassword !== '') {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex items-center justify-center p-4">
+        <form
+          onSubmit={handleUnlockLogin}
+          className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4 shadow-sm"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                دخول لوحة الإدارة
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                إدارة الحصص · OpenWrt 25.12.6
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                اسم المستخدم
+              </label>
+              <input
+                type="text"
+                value={loginUser}
+                onChange={(e) => setLoginUser(e.target.value)}
+                placeholder="اسم المستخدم"
+                autoFocus
+                required
+                className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                كلمة المرور
+              </label>
+              <input
+                type="password"
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                placeholder="كلمة المرور"
+                required
+                className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono"
+              />
+            </div>
+          </div>
+
+          {loginError && (
+            <p className="text-xs text-red-600 dark:text-red-400">{loginError}</p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full px-4 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+          >
+            تسجيل الدخول
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
       {/* Top Bar Contract: 3 zones, gap-8, single-line controls */}
@@ -597,7 +687,7 @@ export default function App() {
             }}
             className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0"
           >
-            QuotaManager · OpenWrt
+            إدارة الحصص · OpenWrt
           </a>
 
           <nav className="flex items-center gap-6 overflow-x-auto text-sm font-medium">
@@ -605,7 +695,7 @@ export default function App() {
               [
                 { id: 'dashboard', label: 'لوحة الراوتر' },
                 { id: 'users', label: 'المستخدمون' },
-                { id: 'dns', label: 'قسم DNS' },
+                { id: 'dns', label: 'DNS والحظر' },
                 { id: 'logs', label: 'سجلات النشاط' },
                 { id: 'builder', label: 'توليد الحزمة' },
                 { id: 'guide', label: 'دليل التركيب' },
@@ -643,10 +733,27 @@ export default function App() {
           <div>
             <span>نظام OpenWrt 25.12.6 فقط</span>
             <span aria-hidden="true" className="mx-1.5">·</span>
-            <span>دعم حصري لإصدار 25.12.6 (apk + ucode + fw4/nftables)</span>
+            <span>دعم حصري لإصدار 25.12.6 بدون اعتماديات خارجية</span>
           </div>
 
           <div className="flex items-center gap-2">
+            {settings.adminPassword !== '' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginUser('');
+                  setLoginPass('');
+                  setLoginError(null);
+                  setIsLocked(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0"
+                title="قفل الجلسة وتجربة تسجيل الدخول بحساب الأدمن"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>قفل الدخول</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleResetSimulationDefaults}

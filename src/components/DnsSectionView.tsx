@@ -46,21 +46,21 @@ const DNS_PRESETS: DnsPresetOption[] = [
   },
   {
     id: 'google',
-    name: 'Google Public DNS',
+    name: 'Google DNS',
     subtitle: 'استقرار عالٍ وتغطية عالمية',
     primary: '8.8.8.8',
     secondary: '8.8.4.4',
   },
   {
     id: 'isp',
-    name: 'DNS مزود الخدمة (ISP)',
+    name: 'ISP DNS',
     subtitle: 'استخدام خوادم الشركة المزودة تلقائياً',
     primary: '',
     secondary: '',
   },
   {
     id: 'custom',
-    name: 'خادم مخصص (Custom)',
+    name: 'Custom DNS',
     subtitle: 'إدخال عناوين IPv4 يدوياً',
     primary: '',
     secondary: '',
@@ -177,10 +177,10 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              إدارة خوادم وحماية DNS (dnsmasq + fw4)
+              إدارة خوادم وحماية DNS
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              توجيه جميع طلبات النطاقات عبر dnsmasq في الرام لتحسين الاستجابة وحظر الإعلانات والمواقع غير المرغوبة دون كتابة متكررة على الـ Flash.
+              توجيه جميع طلبات DNS عبر dnsmasq في RAM لتحسين الاستجابة وحظر الإعلانات والمواقع غير المرغوبة دون كتابة متكررة على Flash.
             </p>
           </div>
 
@@ -200,7 +200,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
           <div className="text-xs text-slate-500 dark:text-slate-400">
-            مزود DNS النشط
+            خادم DNS النشط
           </div>
           <div className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
             {activePreset.name}
@@ -214,7 +214,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
           <div className="text-xs text-slate-500 dark:text-slate-400">
-            إجبار DNS عبر منفذ 53
+            إجبار التوجيه عبر Port 53
           </div>
           <div
             className={`mt-1 text-base font-semibold ${
@@ -226,19 +226,19 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
             {dnsFilter.forceDnsRedirect ? 'مفعّل (Force Redirect)' : 'معطّل'}
           </div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            يمنع الأجهزة من تجاوز حظر الراوتر بـ 8.8.8.8
+            يمنع الأجهزة من تجاوز حظر الراوتر بخوادم DNS خارجية
           </div>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
           <div className="text-xs text-slate-500 dark:text-slate-400">
-            ذاكرة التخزين المؤقت (RAM Cache)
+            ذاكرة DNS المؤقتة (RAM Cache)
           </div>
           <div className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100 font-mono tabular-nums">
             {dnsFilter.cacheSize} سجل
           </div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            تسريع فتح المواقع المتكررة على OpenWrt
+            تسريع فتح المواقع المتكررة على الراوتر
           </div>
         </div>
 
@@ -261,7 +261,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              اختيار خادم DNS الرئيسي (Upstream DNS)
+              اختيار خادم DNS الرئيسي
             </h2>
           </div>
 
@@ -301,7 +301,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <div>
               <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-                DNS الأساسي (Primary)
+                Primary DNS
               </label>
               <input
                 type="text"
@@ -318,7 +318,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
 
             <div>
               <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-                DNS البديل (Secondary)
+                Secondary DNS
               </label>
               <input
                 type="text"
@@ -335,7 +335,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
 
             <div>
               <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-                حجم الكاش (dnsmasq)
+                حجم Cache
               </label>
               <select
                 value={dnsFilter.cacheSize}
@@ -354,10 +354,10 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
           <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
             <div>
               <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                إجبار جميع الأجهزة على استخدام DNS الراوتر (Force DNS Port 53)
+                إجبار جميع الأجهزة على استخدام DNS الراوتر (Port 53)
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                يعيد توجيه أي استعلام DNS خارجي عبر قاعدة nftables dstnat لضمان عدم تجاوز الفلتر من الهواتف أو التطبيقات
+                يعيد توجيه أي استعلام DNS خارجي تلقائياً لضمان عدم تجاوز الفلتر من الهواتف أو التطبيقات
               </div>
             </div>
             <input
@@ -384,7 +384,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
             <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <div>
                 <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                  حظر الإعلانات والمتتبعات (AdBlock)
+                  حظر الإعلانات والمتتبعات
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   تقليل استهلاك الباقة المخفي من إعلانات الفيديو والتطبيقات
@@ -401,10 +401,10 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
             <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <div>
                 <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                  حظر المواقع الإباحية (Adult Filter)
+                  حظر المواقع الإباحية
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  منع الوصول عبر DNS لجميع الأجهزة المتصلة بالمنزل
+                  منع الوصول لجميع الأجهزة المتصلة بالمنزل
                 </div>
               </div>
               <input
@@ -418,7 +418,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
             <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
               <div>
                 <div className="font-medium text-slate-900 dark:text-slate-100 text-xs">
-                  حظر مواقع المراهنات والقمار (Gambling Filter)
+                  حظر مواقع المراهنات والقمار
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   حجب نطاقات المراهنات الشائعة على مستوى الشبكة
@@ -487,7 +487,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-4">
           <div>
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              أسماء النطاقات المحلية (Local DNS Records)
+              أسماء النطاقات المحلية (Local DNS)
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               اربط أي اسم نطاق محلي مثل <span className="font-mono">quota.lan</span> بعنوان IP داخلي للوصول السريع بدون حفظ الأرقام.
@@ -576,10 +576,10 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                معاينة ملف dnsmasq الفعلي
+                معاينة ملف dnsmasq.conf الفعلي
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                الإعدادات المولّدة تلقائياً لنظام OpenWrt في الذاكرة
+                الإعدادات المولّدة تلقائياً لـ dnsmasq في RAM
               </p>
             </div>
             <button

@@ -26,7 +26,7 @@ interface TrafficTooltipProps {
 }
 
 function formatByteRate(mbps: number): string {
-  const kbytesPerSec = mbps * 125; // 1 Mbps = 125 KB/s
+  const kbytesPerSec = mbps * 125;
   if (kbytesPerSec >= 1024) {
     return `${(kbytesPerSec / 1024).toFixed(2)} MB/s`;
   }
@@ -158,7 +158,7 @@ export const AggregateTrafficChart: React.FC<AggregateTrafficChartProps> = React
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
         <div>
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            إجمالي حركة البيانات الحية للراوتر (Aggregate Traffic)
+            إجمالي حركة البيانات الحية للراوتر
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {simRunning

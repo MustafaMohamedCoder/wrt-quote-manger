@@ -19,6 +19,7 @@ const UCI_CONFIG_TEMPLATE = `config global 'main'
 \toption dns_cache '1500'
 \toption lan_if 'br-lan'
 \toption wan_if ''
+\toption admin_user '__ADMIN_USER__'
 \toption admin_hash '__ADMIN_HASH__'
 `;
 
@@ -762,12 +763,15 @@ let c = cursor();
 
 if (action == 'login') {
 \tlet body = read_body();
+\tlet saved_user = trim(c.get('quotamgr', 'main', 'admin_user') || 'مصطفي');
 \tlet saved_hash = trim(c.get('quotamgr', 'main', 'admin_hash') || '');
 \tif (saved_hash == '') {
 \t\trespond(200, { ok: true, auth_enabled: false });
 \t}
-\tif (sha256(body.password || '') != saved_hash) {
-\t\trespond(401, { ok: false, error: 'كلمة المرور غير صحيحة' });
+\tlet req_user = trim(body.username != null ? ('' + body.username) : '');
+\tlet req_pw = body.password != null ? ('' + body.password) : '';
+\tif (req_user != saved_user || sha256(req_pw) != saved_hash) {
+\t\trespond(401, { ok: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
 \t}
 \tfor (let f in (lsdir(SESS_DIR) || [])) unlink(SESS_DIR + f);
 \tlet tok = trim(capture('head -c 16 /dev/urandom | hexdump -ve "1/1 \\"%.2x\\""'));
@@ -797,6 +801,7 @@ if (action == 'state') {
 \trespond(200, {
 \t\tok: true,
 \t\tauth_enabled: (trim(c.get('quotamgr', 'main', 'admin_hash') || '') != ''),
+\t\tadmin_user: trim(c.get('quotamgr', 'main', 'admin_user') || 'مصطفي'),
 \t\tsettings: {
 \t\t\tbundle_gb: +(c.get('quotamgr', 'main', 'bundle_gb') || 140),
 \t\t\trenew_day: +(c.get('quotamgr', 'main', 'renew_day') || 1),
@@ -896,10 +901,13 @@ if (action == 'update_settings') {
 \tif (body.dns_secondary != null) c.set('quotamgr', 'main', 'dns_secondary', '' + body.dns_secondary);
 \tif (body.force_dns != null) c.set('quotamgr', 'main', 'force_dns', body.force_dns ? '1' : '0');
 \tif (body.dns_cache != null) c.set('quotamgr', 'main', 'dns_cache', '' + (+body.dns_cache));
+\tif (body.admin_user != null && length(trim('' + body.admin_user)) > 0) {
+\t\tc.set('quotamgr', 'main', 'admin_user', trim('' + body.admin_user));
+\t}
 \tif (body.clear_password) {
 \t\tc.set('quotamgr', 'main', 'admin_hash', '');
-\t} else if (body.new_password && length(body.new_password) >= 4) {
-\t\tc.set('quotamgr', 'main', 'admin_hash', sha256(body.new_password));
+\t} else if (body.new_password != null && length('' + body.new_password) >= 1) {
+\t\tc.set('quotamgr', 'main', 'admin_hash', sha256('' + body.new_password));
 \t}
 \tc.save('quotamgr');
 \tc.commit('quotamgr');
@@ -927,7 +935,7 @@ const ROUTER_HTML_UI = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QuotaManager — OpenWrt</title>
+<title>إدارة الحصص — OpenWrt</title>
 <style>
 :root{--bg:#f8fafc;--card:#fff;--bd:#e2e8f0;--row:#f1f5f9;--txt:#0f172a;--mut:#64748b;--inp:#cbd5e1;--th:#f8fafc;--th-t:#475569;--act:#0f172a}
 body.dark{--bg:#020617;--card:#0f172a;--bd:#1e293b;--row:#1e293b;--txt:#f1f5f9;--mut:#94a3b8;--inp:#334155;--th:#1e293b;--th-t:#cbd5e1;--act:#0284c7}
@@ -959,18 +967,19 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
 <body>
 <div id="login" class="hide">
   <h2 style="margin-top:0">دخول لوحة الشبكة</h2>
-  <p class="muted">راوتر OpenWrt 25.12.6 — أدخل كلمة المرور المخصّصة</p>
-  <input id="pw" type="password" placeholder="كلمة المرور" style="width:100%;margin:12px 0">
+  <p class="muted">راوتر OpenWrt 25.12.6 — سجّل الدخول بحساب الأدمن</p>
+  <input id="lun" type="text" placeholder="اسم المستخدم" style="width:100%;margin:12px 0 8px" onkeydown="if(event.key==='Enter')doLogin()">
+  <input id="pw" type="password" placeholder="كلمة المرور" style="width:100%;margin:0 0 12px" onkeydown="if(event.key==='Enter')doLogin()">
   <button class="pri" style="width:100%" onclick="doLogin()">دخول</button>
   <p id="lerr" style="color:#ef4444;font-size:12px"></p>
 </div>
 <div id="app" class="hide">
   <header>
-    <div class="brand">QuotaManager · OpenWrt</div>
+    <div class="brand">إدارة الحصص · OpenWrt</div>
     <div class="tabs">
       <button class="act" onclick="tab('ov',this)">نظرة عامة</button>
       <button onclick="tab('us',this)">المستخدمون</button>
-      <button onclick="tab('dn',this)">DNS</button>
+      <button onclick="tab('dn',this)">DNS والحظر</button>
       <button onclick="tab('lg',this)">سجلات النشاط</button>
       <button onclick="tab('st',this)">الإعدادات</button>
     </div>
@@ -995,10 +1004,10 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
         <strong>إضافة / تعديل مستخدم</strong>
         <div class="row" style="margin-top:10px">
           <input id="un" placeholder="الاسم">
-          <select id="um"><option value="equal">تقسيم متساوي</option><option value="fixed">حصة ثابتة GB</option></select>
-          <input id="ug" type="number" placeholder="GB" style="width:80px">
-          <input id="ud" type="number" placeholder="سقف يومي GB" style="width:110px">
-          <input id="uspd" type="number" placeholder="السرعة Mbps" style="width:110px">
+          <select id="um"><option value="equal">تقسيم متساوي</option><option value="fixed">حصة ثابتة (GB)</option></select>
+          <input id="ug" type="number" placeholder="GB" style="width:90px">
+          <input id="ud" type="number" placeholder="سقف يومي GB" style="width:120px">
+          <input id="uspd" type="number" placeholder="السرعة Mbps" style="width:130px">
           <button class="pri" onclick="saveUser()">حفظ</button>
         </div>
       </div>
@@ -1023,21 +1032,21 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
     </div>
     <div id="p_dn" class="hide">
       <div class="card" style="margin-bottom:16px">
-        <strong>إعدادات خوادم DNS والحماية (dnsmasq)</strong>
+        <strong>إعدادات DNS والحماية</strong>
         <div class="row" style="margin-top:12px">
           <select id="dp" onchange="pickDnsPreset()">
             <option value="cloudflare_family">Cloudflare Family (1.1.1.3)</option>
             <option value="cloudflare">Cloudflare (1.1.1.1)</option>
             <option value="adguard">AdGuard DNS (94.140.14.14)</option>
             <option value="quad9">Quad9 (9.9.9.9)</option>
-            <option value="google">Google (8.8.8.8)</option>
-            <option value="isp">DNS مزود الخدمة</option>
-            <option value="custom">مخصص</option>
+            <option value="google">Google DNS (8.8.8.8)</option>
+            <option value="isp">ISP DNS</option>
+            <option value="custom">Custom</option>
           </select>
           <input id="d1" dir="ltr" placeholder="Primary DNS" style="width:130px">
           <input id="d2" dir="ltr" placeholder="Secondary DNS" style="width:130px">
           <select id="dc"><option value="500">Cache 500</option><option value="1500">Cache 1500</option><option value="3000">Cache 3000</option></select>
-          <label><input id="dfd" type="checkbox"> إجبار DNS (Port 53)</label>
+          <label><input id="dfd" type="checkbox"> إجبار التوجيه (Port 53)</label>
         </div>
         <div class="row" style="margin-top:12px">
           <label><input id="sad" type="checkbox"> حظر الإعلانات</label>
@@ -1065,10 +1074,11 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
           <label>سعة الباقة (GB) <input id="sb" type="number" style="width:90px"></label>
           <label>يوم التجديد <input id="sr" type="number" min="1" max="28" style="width:70px"></label>
           <label><input id="sbn" type="checkbox"> حظر الأجهزة الجديدة تلقائياً</label>
-          <label><input id="sqos" type="checkbox"> تفعيل QoS وتخفيض Ping</label>
+          <label><input id="sqos" type="checkbox"> تفعيل QoS والألعاب</label>
         </div>
         <div class="row" style="margin-top:12px">
-          <input id="spw" type="password" placeholder="تعيين/تغيير كلمة المرور (اختياري)">
+          <input id="sun" type="text" placeholder="اسم مستخدم الأدمن" style="width:150px">
+          <input id="spw" type="password" placeholder="كلمة المرور الجديدة (الافتراضية: 0)">
           <button class="pri" onclick="saveSettings()">حفظ الإعدادات</button>
           <button id="clrp" class="hide" onclick="clearPw()">إلغاء كلمة المرور</button>
           <button class="dng" onclick="resetCycle()">تصفير استهلاك الدورة</button>
@@ -1084,7 +1094,7 @@ function toggleTheme(){const d=!document.body.classList.contains('dark');localSt
 applyTheme(localStorage.getItem('qm_theme')==='dark');
 async function api(a,b){const r=await fetch('/cgi-bin/api?action='+a,{method:b?'POST':'GET',headers:b?{'Content-Type':'application/json'}:{},body:b?JSON.stringify(b):undefined});return r.json();}
 function tab(id,btn){['ov','us','dn','lg','st'].forEach(x=>document.getElementById('p_'+x).classList.toggle('hide',x!==id));document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('act'));btn.classList.add('act');}
-async function doLogin(){const res=await api('login',{password:document.getElementById('pw').value});if(res.ok){load();}else{document.getElementById('lerr').textContent=res.error||'خطأ';}}
+async function doLogin(){const res=await api('login',{username:document.getElementById('lun').value,password:document.getElementById('pw').value});if(res.ok){document.getElementById('lerr').textContent='';load();}else{document.getElementById('lerr').textContent=res.error||'خطأ';}}
 async function logout(){await api('logout',{});location.reload();}
 function fmtG(b){return (b/GB).toFixed(2)+' GB';}
 function fmtS(bps){return bps>1048576?(bps/1048576).toFixed(1)+' Mbps':Math.round(bps/1024)+' Kbps';}
@@ -1100,6 +1110,7 @@ function render(){
   const st=DATA.state,cfg=DATA.settings,sys=DATA.system;
   const lb=document.getElementById('lout');if(lb)lb.classList.toggle('hide',!DATA.auth_enabled);
   const cp=document.getElementById('clrp');if(cp)cp.classList.toggle('hide',!DATA.auth_enabled);
+  const su=document.getElementById('sun');if(su)su.value=DATA.admin_user||'مصطفي';
   let totUsed=0;Object.values(st.devices).forEach(d=>totUsed+=d.used_bytes||0);
   const rem=Math.max(0,cfg.bundle_gb*GB-totUsed),pct=Math.min(100,(totUsed/(cfg.bundle_gb*GB||1))*100);
   document.getElementById('kpis').innerHTML=\`
@@ -1107,16 +1118,16 @@ function render(){
     <div class="card"><div class="muted">المستهلك</div><div class="num">\${fmtG(totUsed)}</div></div>
     <div class="card"><div class="muted">المتبقي</div><div class="num">\${fmtG(rem)}</div></div>
     <div class="card"><div class="muted">الأجهزة النشطة</div><div class="num">\${Object.values(st.devices).filter(d=>d.online).length} / \${Object.keys(st.devices).length}</div></div>\`;
-  document.getElementById('sysinfo').textContent='RAM متاحة: '+sys.mem_free_mb+'/'+sys.mem_total_mb+' MB · Flash متاح: '+Math.round(sys.flash_free_kb/1024)+' MB';
+  document.getElementById('sysinfo').textContent='RAM: '+sys.mem_free_mb+'/'+sys.mem_total_mb+' MB · Flash: '+Math.round(sys.flash_free_kb/1024)+' MB';
   const uopts=['<option value="">غير معين</option>'].concat(Object.values(st.users).map(u=>\`<option value="\${u.id}">\${u.name}</option>\`)).join('');
   document.getElementById('devs').innerHTML=Object.values(st.devices).map(d=>{
     const status=d.blocked?'محظور':d.paused?'متوقف مؤقتاً':(!d.user_id&&cfg.block_new_devices)?'محظور (جهاز جديد)':'متصل';
     const usr=d.user_id?st.users[d.user_id]:null;
     const effD=d.limit_down_mbps>0?d.limit_down_mbps:(usr?usr.speed_down_mbps||0:0);
     const effU=d.limit_up_mbps>0?d.limit_up_mbps:(usr?usr.speed_up_mbps||0:0);
-    const capTxt=(effD>0||effU>0)?('سقف: '+(effD||'مفتوح')+'/'+(effU||'مفتوح')+'M'):'سقف: مفتوح';
+    const capTxt=(effD>0||effU>0)?('سقف: '+(effD||'مفتوح')+'/'+(effU||'مفتوح')+' Mbps'):'سقف: مفتوح';
     const spdCell=EDIT_MAC===d.mac
-      ?\`<div class="row"><input id="ed_d" type="number" min="0" value="\${d.limit_down_mbps||0}" style="width:58px" title="تحميل Mbps"><input id="ed_u" type="number" min="0" value="\${d.limit_up_mbps||0}" style="width:58px" title="رفع Mbps"><button class="pri" onclick="saveLim('\${d.mac}')">حفظ</button><button onclick="EDIT_MAC=null;render()">×</button></div><div class="row" style="margin-top:4px"><button onclick="setLim('\${d.mac}',2,1)">2M</button><button onclick="setLim('\${d.mac}',5,2)">5M</button><button onclick="setLim('\${d.mac}',10,3)">10M</button><button onclick="setLim('\${d.mac}',0,0)">مفتوح</button></div>\`
+      ?\`<div class="row"><input id="ed_d" type="number" min="0" value="\${d.limit_down_mbps||0}" style="width:58px" title="التحميل بـ Mbps"><input id="ed_u" type="number" min="0" value="\${d.limit_up_mbps||0}" style="width:58px" title="الرفع بـ Mbps"><button class="pri" onclick="saveLim('\${d.mac}')">حفظ</button><button onclick="EDIT_MAC=null;render()">×</button></div><div class="row" style="margin-top:4px"><button onclick="setLim('\${d.mac}',2,1)">2 Mbps</button><button onclick="setLim('\${d.mac}',5,2)">5 Mbps</button><button onclick="setLim('\${d.mac}',10,3)">10 Mbps</button><button onclick="setLim('\${d.mac}',0,0)">مفتوح</button></div>\`
       :\`<div>↓\${fmtS(d.live_down_bps||0)}</div><div class="muted">\${capTxt}</div>\`;
     return \`<tr><td><b>\${d.hostname}</b><div class="muted">\${d.mac} · \${d.ip||'-'}</div></td>
     <td><select onchange="devOp('\${d.mac}','assign',{user_id:this.value})">\${uopts.replace('value="'+d.user_id+'"','value="'+d.user_id+'" selected')}</select></td>
@@ -1173,7 +1184,7 @@ async function addDom(){const v=document.getElementById('cdom').value.trim();if(
 async function delDom(v){const arr=(DATA.state.custom_domains||[]).filter(x=>x!==v);await api('update_settings',{custom_domains:arr});load();}
 async function addRec(){const h=document.getElementById('lhost').value.trim(),ip=document.getElementById('lip').value.trim();if(!h||!ip)return;const arr=(DATA.state.local_records||[]).concat([{host:h,ip:ip}]);document.getElementById('lhost').value='';await api('update_settings',{local_records:arr});load();}
 async function delRec(h){const arr=(DATA.state.local_records||[]).filter(x=>x.host!==h);await api('update_settings',{local_records:arr});load();}
-async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,new_password:document.getElementById('spw').value});document.getElementById('spw').value='';load();}
+async function saveSettings(){await api('update_settings',{bundle_gb:+document.getElementById('sb').value,renew_day:+document.getElementById('sr').value,block_new_devices:document.getElementById('sbn').checked,enable_qos:document.getElementById('sqos').checked,admin_user:document.getElementById('sun').value,new_password:document.getElementById('spw').value});document.getElementById('spw').value='';load();}
 async function clearPw(){await api('update_settings',{clear_password:true});load();}
 async function resetCycle(){if(confirm('تصفير استهلاك الدورة؟')){await api('reset_cycle',{});load();}}
 load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').classList.contains('hide')&&!EDIT_MAC)load();},6000);
@@ -1196,6 +1207,7 @@ export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtF
   const daemonCode = compactBundleText(QUOTAMGRD_UCODE);
   const cgiCode = compactBundleText(CGI_API_UCODE);
   const htmlCode = compactBundleText(ROUTER_HTML_UI);
+  const customUser = (cfg.initialUsername || 'مصطفي').trim().replace(/['\r\n\\`$]/g, '') || 'مصطفي';
   const customPw = cfg.initialPassword.trim();
   const adminHashExpr = customPw
     ? `$(printf %s '${customPw.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)`
@@ -1207,6 +1219,7 @@ export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtF
     .replace('__RENEW_DAY__', String(cfg.renewDay))
     .replace('__BLOCK_NEW__', cfg.blockNewDevices ? '1' : '0')
     .replace('__ENABLE_QOS__', cfg.enableQos ? '1' : '0')
+    .replace('__ADMIN_USER__', customUser)
     .replace('__ADMIN_HASH__', adminHashExpr);
 
   const pkgCmd = `# OpenWrt 25.12.6 uses apk
@@ -1273,6 +1286,7 @@ uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d' 2>/dev/null || true
 uci commit dhcp 2>/dev/null || true
 
 # 7. Write UCI config (/etc/config/quotamgr)
+ADMIN_USER='${customUser}'
 ADMIN_HASH=${customPw ? `$(printf %s '${customPw.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)` : "''"}
 cat << EOF_CFG > /etc/config/quotamgr
 config global 'main'
@@ -1293,6 +1307,7 @@ config global 'main'
 \toption force_dns '0'
 \toption dns_cache '1500'
 \toption lan_if 'br-lan'
+\toption admin_user '$ADMIN_USER'
 \toption admin_hash '$ADMIN_HASH'
 EOF_CFG
 
@@ -1337,7 +1352,7 @@ echo ""
 echo "================================================="
 echo " Installation Complete!"
 echo " Dashboard URL : http://$LAN_IP:${cfg.dashboardPort}"
-echo " Auth Mode     : ${customPw ? 'Custom password enabled' : 'Direct LAN access (no default admin account)'}"
+echo " Auth Mode     : ${customPw ? `Admin account (${customUser})` : 'Direct LAN access (no password)'}"
 echo "================================================="
 `;
 
@@ -1350,31 +1365,31 @@ echo "================================================="
     },
     {
       path: '/usr/sbin/quotamgrd',
-      description: 'محرك المراقبة والقطع اللحظي وتقسيم السرعة (ucode + nftables + tc-batch)',
+      description: 'محرك المراقبة ucode + nftables/fw4 والقطع اللحظي وتقسيم السرعة QoS',
       sizeBytes: new TextEncoder().encode(daemonCode).length,
       content: daemonCode,
     },
     {
       path: '/www-quota/cgi-bin/api',
-      description: 'واجهة البرمجة الخلفية CGI لخادم uhttpd بدون Python أو FastAPI',
+      description: 'واجهة CGI API لخادم uhttpd المدمج بدون اعتماديات خارجية',
       sizeBytes: new TextEncoder().encode(cgiCode).length,
       content: cgiCode,
     },
     {
       path: '/www-quota/index.html',
-      description: 'لوحة تحكم الويب المدمجة باللغة العربية (ملف واحد مضغوط بدون اعتماد على الإنترنت)',
+      description: 'لوحة تحكم الويب المدمجة (ملف واحد مضغوط بدون اعتماد على الإنترنت)',
       sizeBytes: new TextEncoder().encode(htmlCode).length,
       content: htmlCode,
     },
     {
       path: '/etc/init.d/quotamgr',
-      description: 'ملف خدمة procd للتشغيل التلقائي وحفظ البيانات في الـ Flash عند الإطفاء فقط',
+      description: 'ملف خدمة procd للتشغيل التلقائي وحفظ البيانات في RAM عند الإطفاء فقط',
       sizeBytes: new TextEncoder().encode(INIT_SCRIPT_TEMPLATE).length,
       content: INIT_SCRIPT_TEMPLATE,
     },
     {
       path: '/etc/config/quotamgr',
-      description: 'ملف الإعدادات القياسي بنظام UCI + حزم apk لإصدار OpenWrt 25.12.6',
+      description: 'ملف إعدادات UCI القياسي وأوامر apk لإصدار OpenWrt 25.12.6',
       sizeBytes: new TextEncoder().encode(uciConfig).length,
       content: uciConfig + '\n# Package commands (OpenWrt 25.12.6):\n' + pkgCmd,
     },

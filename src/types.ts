@@ -22,7 +22,7 @@ export interface NetworkDevice {
   ip: string;
   hostname: string;
   vendor: string;
-  connectionType: 'Wi-Fi 5G' | 'Wi-Fi 2.4G' | 'LAN';
+  connectionType: 'Wi-Fi 5GHz' | 'Wi-Fi 2.4GHz' | 'Ethernet';
   userId: string | null;
   usedGb: number;
   dailyUsedGb: number;
@@ -71,6 +71,7 @@ export interface BundleSettings {
   gamingPriority: boolean;
   operationMode: RouterOperationMode;
   dashboardPort: number;
+  adminUsername: string;
   adminPassword: string;
 }
 
@@ -80,6 +81,7 @@ export interface OpenWrtBuildConfig {
   dashboardPort: number;
   bundleGb: number;
   renewDay: number;
+  initialUsername: string;
   initialPassword: string;
   enableQos: boolean;
   enableDnsFilter: boolean;
@@ -108,7 +110,7 @@ export interface ActivityLogEntry {
   ip: string;
   hostname: string;
   vendor: string;
-  connectionType: 'Wi-Fi 5G' | 'Wi-Fi 2.4G' | 'LAN';
+  connectionType: 'Wi-Fi 5GHz' | 'Wi-Fi 2.4GHz' | 'Ethernet';
   userId: string | null;
   isUnknown: boolean;
   note: string;

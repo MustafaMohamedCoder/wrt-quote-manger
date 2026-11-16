@@ -160,7 +160,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
   const handleSaveLimit = (mac: string) => {
     onSetDeviceLimit(mac, Math.max(0, draftDown), Math.max(0, draftUp));
     setEditingLimitMac(null);
-    setNotice('تم تحديث حد السرعة في قواعد tc / fq_codel.');
+    setNotice('تم تحديث حد السرعة في قواعد QoS (tc).');
     setTimeout(() => setNotice(null), 3000);
   };
 
@@ -176,12 +176,12 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
             <span>
               الوضع:{' '}
               {settings.operationMode === 'router'
-                ? 'راوتر وبوابة OpenWrt (fw4 + NAT)'
-                : 'OpenWrt Bridge AP (kmod-nft-bridge)'}
+                ? 'وضع التوجيه (Router / Gateway)'
+                : 'نقطة وصول جسرية (Bridge AP)'}
             </span>
             <span aria-hidden="true">·</span>
             <span>
-              QoS للألعاب: {settings.enableQos ? 'مفعل (fq_codel)' : 'معطل'}
+              جودة الألعاب (QoS): {settings.enableQos ? 'مفعّلة' : 'معطّلة'}
             </span>
             <span aria-hidden="true">·</span>
             <span className="font-mono tabular-nums">
@@ -380,7 +380,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="بحث بالاسم، MAC، أو IP..."
+                placeholder="بحث بالاسم أو MAC أو IP..."
                 className="pr-9 pl-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 w-56"
               />
             </div>
@@ -504,7 +504,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                                   value={draftDown}
                                   onChange={(e) => setDraftDown(Number(e.target.value))}
                                   className="w-14 px-2 py-1 text-xs font-mono border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                                  title="حد التحميل Mbps (0 = مفتوح)"
+                                  title="حد التحميل بـ Mbps (0 = مفتوح)"
                                 />
                               </label>
                               <label className="flex items-center gap-1 text-[11px] font-sans text-slate-600 dark:text-slate-400">
@@ -516,7 +516,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                                   value={draftUp}
                                   onChange={(e) => setDraftUp(Number(e.target.value))}
                                   className="w-14 px-2 py-1 text-xs font-mono border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                                  title="حد الرفع Mbps (0 = مفتوح)"
+                                  title="حد الرفع بـ Mbps (0 = مفتوح)"
                                 />
                               </label>
                               <button
@@ -536,11 +536,11 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                             </div>
                             <div className="flex flex-wrap items-center gap-1 font-sans">
                               {[
-                                { label: '1M', d: 1, u: 1 },
-                                { label: '3M', d: 3, u: 1 },
-                                { label: '5M', d: 5, u: 2 },
-                                { label: '10M', d: 10, u: 3 },
-                                { label: '20M', d: 20, u: 5 },
+                                { label: '1 Mbps', d: 1, u: 1 },
+                                { label: '3 Mbps', d: 3, u: 1 },
+                                { label: '5 Mbps', d: 5, u: 2 },
+                                { label: '10 Mbps', d: 10, u: 3 },
+                                { label: '20 Mbps', d: 20, u: 5 },
                                 { label: 'مفتوح', d: 0, u: 0 },
                               ].map((preset) => (
                                 <button
@@ -620,7 +620,7 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
                           <button
                             type="button"
                             onClick={() => onDeviceOp(d.mac, 'kick')}
-                            title="طرد وفصل Wi-Fi فوراً"
+                            title="طرد وفصل الاتصال فوراً"
                             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded border border-red-200 dark:border-red-900/60 bg-white dark:bg-slate-900 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 whitespace-nowrap"
                           >
                             <WifiOff className="w-3 h-3" />
