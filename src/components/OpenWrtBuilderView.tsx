@@ -22,7 +22,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
     files.find((f) => f.path === selectedPath) || files[0];
 
   const totalCoreBytes = files
-    .filter((f) => f.path !== 'install_halo_g920.sh')
+    .filter((f) => f.path !== 'install_openwrt.sh')
     .reduce((acc, f) => acc + f.sizeBytes, 0);
 
   const handleCopy = async () => {
@@ -42,12 +42,12 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              هندسة المشروع الأصلية لراوتر Halo G920 (Hanyang HYC-G920)
+              هندسة الحزمة الأصلية لإصدار OpenWrt 25.12.6 فقط
             </h2>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-              مواصفات الجهاز: معالج <span className="font-mono">MediaTek MT7621AT</span> ثنائي النواة · رام{' '}
-              <span className="font-mono tabular-nums">256 MB</span> · ذاكرة داخلية{' '}
-              <span className="font-mono tabular-nums">16 MB Flash (ramips/mt7621)</span>.
+              مبني ليعمل حصرياً على إصدار <span className="font-mono">OpenWrt 25.12.6</span> عبر{' '}
+              <span className="font-mono">apk</span> و <span className="font-mono">ucode</span> و{' '}
+              <span className="font-mono">fw4/nftables</span> ببصمة خفيفة للغاية بدون Python أو SQLite.
             </p>
           </div>
           <button
@@ -56,7 +56,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
-            <span>تنزيل install_halo_g920.sh</span>
+            <span>تنزيل install_openwrt.sh</span>
           </button>
         </div>
 
@@ -90,9 +90,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               دعم مدير الحزم والجدار الناري
             </div>
             <div className="mt-1 font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
-              {buildConfig.openwrtRelease === '25.12'
-                ? 'apk + fw4 (nftables)'
-                : 'opkg + fw4 (nftables)'}
+              apk + fw4 (nftables)
             </div>
             <div className="mt-0.5 text-slate-500 dark:text-slate-400">
               يعطّل flow_offloading تلقائياً لضمان دقة العدادات
@@ -110,7 +108,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              إصدار OpenWrt على جهازك
+              إصدار OpenWrt المدعوم
             </label>
             <select
               value={buildConfig.openwrtRelease}
@@ -119,14 +117,13 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               }
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             >
-              <option value="25.12">OpenWrt 25.12+ (مدير الحزم apk)</option>
-              <option value="24.10">OpenWrt 24.10 / 23.05 (مدير الحزم opkg)</option>
+              <option value="25.12.6">OpenWrt 25.12.6 فقط (مدير الحزم apk)</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
-              وضع تشغيل Halo G920
+              وضع تشغيل OpenWrt
             </label>
             <select
               value={buildConfig.operationMode}
@@ -138,7 +135,7 @@ export const OpenWrtBuilderView: React.FC<OpenWrtBuilderViewProps> = ({
               className="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             >
               <option value="router">وضع الراوتر / البوابة (Router/NAT — الأفضل)</option>
-              <option value="ap">وضع الأكسس بوينت (Bridge AP — kmod-nft-bridge)</option>
+              <option value="ap">وضع الجسر على OpenWrt (Bridge AP — kmod-nft-bridge)</option>
             </select>
           </div>
 

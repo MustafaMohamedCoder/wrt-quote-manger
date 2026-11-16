@@ -31,6 +31,9 @@ interface UserChartDatum {
   dailyUsedGb: number;
   dailyCapGb: number;
   dailyPct: number;
+  liveDownMbps: number;
+  liveUpMbps: number;
+  onlineDevicesCount: number;
   allocationLabel: string;
   isCriticalOrExhausted: boolean;
   isExhausted: boolean;
@@ -111,6 +114,20 @@ const UserBarTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
             </span>
           </div>
         )}
+        <div className="flex items-center justify-between gap-4 pt-1 border-t border-slate-100 dark:border-slate-800">
+          <span className="font-sans text-slate-600 dark:text-slate-400">
+            السرعة الحالية ({item.onlineDevicesCount} جهاز):
+          </span>
+          <span className="text-slate-800 dark:text-slate-200">
+            <span className="text-sky-700 dark:text-sky-400">
+              ↓ {item.liveDownMbps.toFixed(2)}
+            </span>
+            {' · '}
+            <span className="text-emerald-700 dark:text-emerald-400">
+              ↑ {item.liveUpMbps.toFixed(2)} Mbps
+            </span>
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -119,6 +136,7 @@ const UserBarTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
 interface PieDatum {
   name: string;
   value: number;
+  pct: number;
   color: string;
 }
 
@@ -133,13 +151,13 @@ const BundlePieTooltip: React.FC<PieTooltipProps> = ({ active, payload }) => {
   return (
     <div
       dir="rtl"
-      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 shadow-sm text-xs"
+      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 shadow-md text-xs space-y-0.5"
     >
       <div className="font-medium text-slate-900 dark:text-slate-100">
         {item.name}
       </div>
-      <div className="font-mono tabular-nums text-slate-700 dark:text-slate-300 mt-0.5">
-        {item.value.toFixed(2)} GB
+      <div className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
+        {item.value.toFixed(2)} GB ({item.pct.toFixed(1)}%)
       </div>
     </div>
   );
@@ -159,6 +177,18 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
     const rows: UserChartDatum[] = users.map((u) => {
       const q = quotaMap.get(u.id)!;
       const remainingGb = Math.max(0, q.quotaGb - q.usedGb);
+      const userDevices = devices.filter((d) => d.userId === u.id);
+      const activeUserDevices = userDevices.filter(
+        (d) => d.online && !d.blocked && !d.paused && !q.isExhausted
+      );
+      const liveDownMbps = activeUserDevices.reduce(
+        (sum, d) => sum + d.liveDownMbps,
+        0
+      );
+      const liveUpMbps = activeUserDevices.reduce(
+        (sum, d) => sum + d.liveUpMbps,
+        0
+      );
       return {
         id: u.id,
         name: u.name,
@@ -169,6 +199,9 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
         dailyUsedGb: Number(q.dailyUsedGb.toFixed(2)),
         dailyCapGb: u.dailyCapGb,
         dailyPct: q.dailyPct,
+        liveDownMbps: Number(liveDownMbps.toFixed(2)),
+        liveUpMbps: Number(liveUpMbps.toFixed(2)),
+        onlineDevicesCount: activeUserDevices.length,
         allocationLabel:
           u.allocationMode === 'fixed' ? 'حصة ثابتة' : 'تقسيم متساوي',
         isCriticalOrExhausted: q.isCriticalOrExhausted,
@@ -182,29 +215,35 @@ export const UserUsageChart: React.FC<UserUsageChartProps> = React.memo(({
       .filter((d) => !d.userId || !users.some((u) => u.id === d.userId))
       .reduce((sum, d) => sum + d.usedGb, 0);
 
+    const safeBundle = bundleGb || 1;
     const slices: PieDatum[] = rows
       .filter((r) => r.usedGb > 0)
       .map((r, idx) => ({
         name: r.name,
         value: r.usedGb,
+        pct: (r.usedGb / safeBundle) * 100,
         color: r.isCriticalOrExhausted
           ? '#dc2626'
           : USER_SLICE_COLORS[idx % USER_SLICE_COLORS.length],
       }));
 
     if (unassignedUsed > 0) {
+      const val = Number(unassignedUsed.toFixed(2));
       slices.push({
         name: 'أجهزة غير معينة',
-        value: Number(unassignedUsed.toFixed(2)),
+        value: val,
+        pct: (val / safeBundle) * 100,
         color: '#64748b',
       });
     }
 
     const bundleRemaining = Math.max(0, bundleGb - totalUsed);
     if (bundleRemaining > 0) {
+      const val = Number(bundleRemaining.toFixed(2));
       slices.push({
         name: 'رصيد الباقة المتبقي',
-        value: Number(bundleRemaining.toFixed(2)),
+        value: val,
+        pct: (val / safeBundle) * 100,
         color: darkMode ? '#1e293b' : '#e2e8f0',
       });
     }

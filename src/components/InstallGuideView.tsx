@@ -23,8 +23,8 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
     }
   };
 
-  const scpCmd = `scp install_halo_g920.sh root@192.168.1.1:/tmp/`;
-  const runCmd = `ssh root@192.168.1.1 "chmod +x /tmp/install_halo_g920.sh && sh /tmp/install_halo_g920.sh"`;
+  const scpCmd = `scp -O install_openwrt.sh root@192.168.1.1:/tmp/`;
+  const runCmd = `ssh root@192.168.1.1 "chmod +x /tmp/install_openwrt.sh && sh /tmp/install_openwrt.sh"`;
   const checkCmd = `logread -e quotamgr && free -m && df -h /overlay`;
 
   return (
@@ -33,10 +33,10 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              دليل التثبيت والتوصيل الصحيح على Halo G920
+              دليل التثبيت والتوصيل على نظام OpenWrt 25.12.6
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              اتبع الخطوات التالية بالترتيب لضمان أعلى أداء بدون امتلاء الذاكرة أو تقطيع الشبكة.
+              اتبع الخطوات التالية بالترتيب لتثبيت النظام على راوتر يعمل بإصدار OpenWrt 25.12.6 فقط.
             </p>
           </div>
           <button
@@ -45,33 +45,32 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
-            <span>تنزيل install_halo_g920.sh</span>
+            <span>تنزيل install_openwrt.sh</span>
           </button>
         </div>
 
-        {/* Step 1: Hardware Wiring */}
+        {/* Step 1: OpenWrt Topology */}
         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            01. توصيل الكابلات وتجهيز راوتر الإنترنت الأساسي
+            01. تجهيز راوتر OpenWrt وتوصيل الشبكة
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            لأفضل دقة في حساب الجيجابايت وتحديد السرعة على معالج{' '}
-            <span className="font-mono">MT7621AT</span>، يُنصح بتشغيل{' '}
+            لأفضل دقة في حساب الجيجابايت وتحديد السرعة، يُنصح بتشغيل راوتر{' '}
             <span className="font-semibold text-slate-800 dark:text-slate-200">
-              Halo G920
+              OpenWrt
             </span>{' '}
-            في وضع الراوتر القياسي:
+            في وضع البوابة القياسي (Router/NAT):
           </p>
           <ul className="list-disc list-inside text-xs text-slate-700 dark:text-slate-300 space-y-1.5 pr-2">
             <li>
-              وصّل كابل الشبكة القادم من راوتر شركة الإنترنت (LAN) إلى منفذ{' '}
-              <span className="font-semibold">WAN الأزرق</span> في جهاز Halo G920.
+              وصّل كابل الإنترنت الرئيسي إلى منفذ{' '}
+              <span className="font-semibold">WAN</span> في راوتر OpenWrt.
             </li>
             <li>
-              اترك شبكة الواي فاي على Halo G920 مفعلة لتتصل بها جميع أجهزة المنزل (أو أغلق الواي فاي في راوتر الشركة الأصلي حتى تمر كل الأجهزة عبر Halo G920).
+              اجعل جميع أجهزة المنزل تتصل بشبكة الواي فاي أو منافذ LAN الخاصة براوتر OpenWrt حتى يمر كامل الترافيك عبر جدار <span className="font-mono">fw4</span>.
             </li>
             <li>
-              إذا كنت مضطراً لاستخدامه كـ <span className="font-semibold">Access Point (Bridge)</span> فقط، اختر وضع Bridge AP من تبويب «توليد الحزمة» قبل التنزيل ليتم تفعيل{' '}
+              إذا كان راوتر OpenWrt مضبوطاً في وضع <span className="font-semibold">Bridge AP</span> فقط، اختر وضع Bridge AP من تبويب «توليد الحزمة» قبل التنزيل ليتم تثبيت{' '}
               <span className="font-mono">kmod-nft-bridge</span>.
             </li>
           </ul>
@@ -111,8 +110,8 @@ export const InstallGuideView: React.FC<InstallGuideViewProps> = ({
             03. رفع ملف التثبيت وتشغيله عبر SSH
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400">
-            انقل ملف <span className="font-mono">install_halo_g920.sh</span> إلى مجلد{' '}
-            <span className="font-mono">/tmp/</span> على الراوتر ثم شغّله:
+            انقل ملف <span className="font-mono">install_openwrt.sh</span> إلى مجلد{' '}
+            <span className="font-mono">/tmp/</span> على راوتر OpenWrt ثم شغّله:
           </p>
 
           <div className="space-y-2">

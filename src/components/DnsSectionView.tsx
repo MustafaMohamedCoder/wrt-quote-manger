@@ -238,7 +238,7 @@ export const DnsSectionView: React.FC<DnsSectionViewProps> = React.memo(({
             {dnsFilter.cacheSize} سجل
           </div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            تسريع فتح المواقع المتكررة في MT7621
+            تسريع فتح المواقع المتكررة على OpenWrt
           </div>
         </div>
 

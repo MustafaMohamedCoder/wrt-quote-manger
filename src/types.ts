@@ -2,7 +2,7 @@ export type QuotaAllocationMode = 'fixed' | 'equal';
 
 export type RouterOperationMode = 'router' | 'ap';
 
-export type OpenWrtRelease = '25.12' | '24.10';
+export type OpenWrtRelease = '25.12.6';
 
 export interface UserProfile {
   id: string;
@@ -118,6 +118,7 @@ export interface TrafficSample {
   timeLabel: string;
   downMbps: number;
   upMbps: number;
+  activeDevices?: number;
 }
 
 

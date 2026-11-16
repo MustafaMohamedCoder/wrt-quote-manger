@@ -156,14 +156,14 @@ export const RouterDashboardView: React.FC<RouterDashboardViewProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-4 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg p-4">
         <div className="space-y-1">
           <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            مراقبة الباقة والأجهزة — Halo G920
+            مراقبة الباقة والأجهزة — OpenWrt
           </h1>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span>
               الوضع:{' '}
               {settings.operationMode === 'router'
-                ? 'راوتر وبوابة (fw4 + NAT)'
-                : 'أكسس بوينت (Bridge nftables)'}
+                ? 'راوتر وبوابة OpenWrt (fw4 + NAT)'
+                : 'OpenWrt Bridge AP (kmod-nft-bridge)'}
             </span>
             <span aria-hidden="true">·</span>
             <span>

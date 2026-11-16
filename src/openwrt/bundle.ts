@@ -863,7 +863,7 @@ const ROUTER_HTML_UI = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QuotaManager — Halo G920</title>
+<title>QuotaManager — OpenWrt</title>
 <style>
 :root{--bg:#f8fafc;--card:#fff;--bd:#e2e8f0;--row:#f1f5f9;--txt:#0f172a;--mut:#64748b;--inp:#cbd5e1;--th:#f8fafc;--th-t:#475569;--act:#0f172a}
 body.dark{--bg:#020617;--card:#0f172a;--bd:#1e293b;--row:#1e293b;--txt:#f1f5f9;--mut:#94a3b8;--inp:#334155;--th:#1e293b;--th-t:#cbd5e1;--act:#0284c7}
@@ -895,14 +895,14 @@ button.dng{color:#ef4444;border-color:#7f1d1d}
 <body>
 <div id="login" class="hide">
   <h2 style="margin-top:0">دخول مدير الشبكة</h2>
-  <p class="muted">راوتر Halo G920 — كلمة المرور الافتراضية: admin</p>
+  <p class="muted">راوتر OpenWrt — كلمة المرور الافتراضية: admin</p>
   <input id="pw" type="password" placeholder="كلمة المرور" style="width:100%;margin:12px 0">
   <button class="pri" style="width:100%" onclick="doLogin()">دخول</button>
   <p id="lerr" style="color:#ef4444;font-size:12px"></p>
 </div>
 <div id="app" class="hide">
   <header>
-    <div class="brand">QuotaManager · Halo G920</div>
+    <div class="brand">QuotaManager · OpenWrt</div>
     <div class="tabs">
       <button class="act" onclick="tab('ov',this)">نظرة عامة</button>
       <button onclick="tab('us',this)">المستخدمون</button>
@@ -1116,7 +1116,7 @@ load();setInterval(()=>{if(!document.hidden&&!document.getElementById('app').cla
 
 function computeSimpleSha256Hint(pw: string): string {
   // In the OpenWrt installer script itself, sha256sum is computed natively at install time!
-  // We keep a safe placeholder marker replaced by printf|sha256sum inside install_halo_g920.sh
+  // We keep a safe placeholder marker replaced by printf|sha256sum inside install_openwrt.sh
   return pw;
 }
 
@@ -1130,33 +1130,40 @@ export function generateOpenWrtFiles(cfg: OpenWrtBuildConfig): GeneratedOpenWrtF
     .replace('__ENABLE_QOS__', cfg.enableQos ? '1' : '0')
     .replace('__ADMIN_HASH__', `$(printf %s '${cfg.initialPassword.replace(/'/g, "'\\''")}' | sha256sum | cut -d' ' -f1)`);
 
-  const pkgCmd =
-    cfg.openwrtRelease === '25.12'
-      ? `# OpenWrt 25.12+ uses apk
+  const pkgCmd = `# OpenWrt 25.12.6 uses apk
 apk update
 ${cfg.enableQos ? 'apk add tc-tiny kmod-sched-core kmod-ifb 2>/dev/null || apk add tc-bpf kmod-sched-core 2>/dev/null || true' : '# QoS disabled'}
-${cfg.operationMode === 'ap' ? 'apk add kmod-nft-bridge 2>/dev/null || true' : ''}`
-      : `# OpenWrt 23.05 / 24.10 uses opkg
-opkg update
-${cfg.enableQos ? 'opkg install tc-tiny kmod-sched-core kmod-ifb 2>/dev/null || opkg install tc-bpf kmod-sched-core 2>/dev/null || true' : '# QoS disabled'}
-${cfg.operationMode === 'ap' ? 'opkg install kmod-nft-bridge 2>/dev/null || true' : ''}`;
+${cfg.operationMode === 'ap' ? 'apk add kmod-nft-bridge 2>/dev/null || true' : ''}`;
 
   const installerScript = `#!/bin/sh
-# QuotaManager Native OpenWrt Installer for Halo G920 (ramips/mt7621)
+# QuotaManager Native OpenWrt 25.12.6 Installer (apk + ucode + fw4/nftables)
 # Zero Python · Zero FastAPI · Zero SQLite · < 100 KB Footprint
 set -e
 
 echo "================================================="
-echo " Installing Native QuotaManager for Halo G920"
+echo " Installing Native QuotaManager for OpenWrt 25.12.6"
 echo "================================================="
 
-# 1. Verify ucode & nftables (pre-installed on OpenWrt 22.03 - 25.12)
+# 1. Verify OpenWrt 25.12.6 exclusively (apk + ucode + fw4/nftables)
+if [ ! -f /etc/openwrt_release ]; then
+  echo "ERROR: This project supports OpenWrt 25.12.6 only (/etc/openwrt_release not found)."
+  exit 1
+fi
+. /etc/openwrt_release
+if [ "\${DISTRIB_RELEASE:-}" != "25.12.6" ]; then
+  echo "ERROR: Unsupported OpenWrt version (\${DISTRIB_RELEASE:-unknown}). Only OpenWrt 25.12.6 is supported."
+  exit 1
+fi
+if ! command -v apk >/dev/null 2>&1; then
+  echo "ERROR: apk package manager not found. OpenWrt 25.12.6 is required."
+  exit 1
+fi
 if ! command -v ucode >/dev/null 2>&1; then
-  echo "ERROR: ucode not found. Please upgrade to OpenWrt 22.03+ (24.10 / 25.12 recommended)."
+  echo "ERROR: ucode not found on OpenWrt 25.12.6."
   exit 1
 fi
 if ! command -v nft >/dev/null 2>&1; then
-  echo "ERROR: nftables (fw4) not found."
+  echo "ERROR: nftables (fw4) not found on OpenWrt 25.12.6."
   exit 1
 fi
 
@@ -1164,18 +1171,11 @@ fi
 FREE_KB=$(df -k /overlay 2>/dev/null | tail -n 1 | awk '{print $4}')
 echo "Free /overlay Flash: \${FREE_KB:-unknown} KB"
 
-# 3. Install minimal optional packages using apk (25.12+) or opkg (<=24.10)
-if command -v apk >/dev/null 2>&1; then
-  echo "Detected apk package manager (OpenWrt 25.12+)"
-  apk update || true
-  ${cfg.enableQos ? 'apk add tc-tiny kmod-sched-core kmod-ifb 2>/dev/null || true' : 'echo "Skipping QoS packages"'}
-  ${cfg.operationMode === 'ap' ? 'apk add kmod-nft-bridge 2>/dev/null || true' : ''}
-elif command -v opkg >/dev/null 2>&1; then
-  echo "Detected opkg package manager (OpenWrt 23.05 / 24.10)"
-  opkg update || true
-  ${cfg.enableQos ? 'opkg install tc-tiny kmod-sched-core kmod-ifb 2>/dev/null || true' : 'echo "Skipping QoS packages"'}
-  ${cfg.operationMode === 'ap' ? 'opkg install kmod-nft-bridge 2>/dev/null || true' : ''}
-fi
+# 3. Install minimal optional packages using apk (OpenWrt 25.12.6)
+echo "Installing optional packages via apk (OpenWrt 25.12.6)"
+apk update || true
+${cfg.enableQos ? 'apk add tc-tiny kmod-sched-core kmod-ifb 2>/dev/null || true' : 'echo "Skipping QoS packages"'}
+${cfg.operationMode === 'ap' ? 'apk add kmod-nft-bridge 2>/dev/null || true' : ''}
 
 # 4. Disable fw4 Flow Offloading so nftables counters & tc limits see every packet
 if uci -q get firewall.@defaults[0].flow_offloading >/dev/null 2>&1; then
@@ -1267,8 +1267,8 @@ echo "================================================="
 
   const files: GeneratedOpenWrtFile[] = [
     {
-      path: 'install_halo_g920.sh',
-      description: 'سكربت التثبيت الشامل بضغطة واحدة (ينشئ كل الملفات ويهيئ uhttpd و fw4 و apk/opkg تلقائياً)',
+      path: 'install_openwrt.sh',
+      description: 'سكربت التثبيت الشامل لإصدار OpenWrt 25.12.6 فقط (يهيئ uhttpd و fw4 و apk تلقائياً)',
       sizeBytes: new TextEncoder().encode(installerScript).length,
       content: installerScript,
     },
@@ -1298,9 +1298,9 @@ echo "================================================="
     },
     {
       path: '/etc/config/quotamgr',
-      description: 'ملف الإعدادات القياسي بنظام UCI + حزم ' + (cfg.openwrtRelease === '25.12' ? 'apk' : 'opkg'),
+      description: 'ملف الإعدادات القياسي بنظام UCI + حزم apk لإصدار OpenWrt 25.12.6',
       sizeBytes: new TextEncoder().encode(uciConfig).length,
-      content: uciConfig + '\n# Package commands:\n' + pkgCmd,
+      content: uciConfig + '\n# Package commands (OpenWrt 25.12.6):\n' + pkgCmd,
     },
   ];
 

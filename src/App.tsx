@@ -61,10 +61,11 @@ function computeAggregateTraffic(
   blockNewDevices: boolean,
   users: UserProfile[],
   devices: NetworkDevice[]
-): { downMbps: number; upMbps: number } {
+): { downMbps: number; upMbps: number; activeDevices: number } {
   const { quotaMap } = computeUserQuotasAndAlerts(bundleGb, users, devices);
   let down = 0;
   let up = 0;
+  let activeDevices = 0;
   for (const d of devices) {
     if (!d.online || d.blocked || d.paused) continue;
     if (!d.userId || !quotaMap.has(d.userId)) {
@@ -74,10 +75,12 @@ function computeAggregateTraffic(
     }
     down += d.liveDownMbps;
     up += d.liveUpMbps;
+    activeDevices += 1;
   }
   return {
-    downMbps: Number(down.toFixed(1)),
-    upMbps: Number(up.toFixed(1)),
+    downMbps: Number(down.toFixed(2)),
+    upMbps: Number(up.toFixed(2)),
+    activeDevices,
   };
 }
 
@@ -95,8 +98,9 @@ function createInitialTrafficHistory(): TrafficSample[] {
   ];
   return multipliers.map((m, idx) => ({
     timeLabel: formatTrafficClock(now - (multipliers.length - 1 - idx) * 1000),
-    downMbps: Number((base.downMbps * m).toFixed(1)),
-    upMbps: Number((base.upMbps * m).toFixed(1)),
+    downMbps: Number((base.downMbps * m).toFixed(2)),
+    upMbps: Number((base.upMbps * m).toFixed(2)),
+    activeDevices: base.activeDevices,
   }));
 }
 
@@ -135,7 +139,7 @@ export default function App() {
   }, [darkMode]);
 
   const [buildConfig, setBuildConfig] = useState<OpenWrtBuildConfig>({
-    openwrtRelease: '25.12',
+    openwrtRelease: '25.12.6',
     operationMode: INITIAL_SETTINGS.operationMode,
     dashboardPort: INITIAL_SETTINGS.dashboardPort,
     bundleGb: INITIAL_SETTINGS.bundleGb,
@@ -194,8 +198,8 @@ export default function App() {
             d.limitDownMbps > 0 ? d.limitDownMbps : u?.speedDownMbps || 25;
           const capUp =
             d.limitUpMbps > 0 ? d.limitUpMbps : u?.speedUpMbps || 0;
-          const down = Math.min(capDown, Math.max(0.5, Number((Math.random() * capDown * 0.65).toFixed(1))));
-          const rawUp = Number((down * 0.22).toFixed(1));
+          const down = Math.min(capDown, Math.max(0.5, Number((Math.random() * capDown * 0.65).toFixed(2))));
+          const rawUp = Number((down * 0.22).toFixed(2));
           const up = capUp > 0 ? Math.min(capUp, rawUp) : rawUp;
           // Accelerated simulation step (~0.08 GB per tick) for visible testing
           const addedGb = Number(((down / 100) * 0.35).toFixed(3));
@@ -219,7 +223,7 @@ export default function App() {
       isFirstTrafficEffect.current = false;
       return;
     }
-    const { downMbps, upMbps } = computeAggregateTraffic(
+    const { downMbps, upMbps, activeDevices } = computeAggregateTraffic(
       settings.bundleGb,
       settings.blockNewDevices,
       users,
@@ -232,6 +236,7 @@ export default function App() {
           timeLabel: formatTrafficClock(Date.now()),
           downMbps,
           upMbps,
+          activeDevices,
         },
       ].slice(-MAX_TRAFFIC_SAMPLES)
     );
@@ -462,7 +467,7 @@ export default function App() {
   const handleDownloadInstaller = useCallback(async () => {
     const { generateOpenWrtFiles } = await import('./openwrt/bundle');
     const files = generateOpenWrtFiles(buildConfig);
-    const installer = files.find((f) => f.path === 'install_halo_g920.sh');
+    const installer = files.find((f) => f.path === 'install_openwrt.sh');
     if (!installer) return;
     const blob = new Blob([installer.content], {
       type: 'text/x-shellscript;charset=utf-8',
@@ -470,7 +475,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'install_halo_g920.sh';
+    a.download = 'install_openwrt.sh';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -490,7 +495,7 @@ export default function App() {
             }}
             className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100 whitespace-nowrap shrink-0"
           >
-            QuotaManager · Halo G920
+            QuotaManager · OpenWrt
           </a>
 
           <nav className="flex items-center gap-6 overflow-x-auto text-sm font-medium">
@@ -534,9 +539,9 @@ export default function App() {
         {/* Workspace Toolbar: Quick Dark/Light Theme Switch */}
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div>
-            <span>نظام OpenWrt 25.12 / 24.10</span>
+            <span>نظام OpenWrt 25.12.6 فقط</span>
             <span aria-hidden="true" className="mx-1.5">·</span>
-            <span>راوتر Hanyang Halo G920 (16MB Flash)</span>
+            <span>دعم حصري لإصدار 25.12.6 (apk + ucode + fw4/nftables)</span>
           </div>
 
           <button
